@@ -1,10 +1,20 @@
 'use strict';
 (() => {
+  const host = window.X1Host;
   const $ = id => document.getElementById(id);
   const editor = $('editor'), mirror = $('mirror'), doc = new X1.ByteDocument();
   let selectionBefore = [0,0], pendingInputType = '', busy = false, composing = false, group = 'symbols';
   let noticeTimer, hoverCode = 0x87;
   let renderedLines = [];
+  let lastContent = null;
+  function contentChanged(){
+    if(lastContent!==null && X1.equal(lastContent,doc.bytes))return;
+    lastContent=doc.bytes;
+    if(!host?.contentChanged)return;
+    const failed=err=>notify('変更通知に失敗しました。\n'+String(err?.message??err),true);
+    try{Promise.resolve(host.contentChanged({bytes:doc.bytes.slice(),dirty:doc.dirty})).catch(failed);}
+    catch(err){failed(err);}
+  }
   const mirrorSelection=typeof window.Highlight==='function'&&Boolean(window.CSS?.highlights);
   $('text-area').classList.toggle('mirror-selection',mirrorSelection);
   let activeFontFace = null, fontSequence = 0, fontRevision = 0;
@@ -44,7 +54,7 @@
       if(pcgFontFace){document.fonts.delete(pcgFontFace);pcgFontFace=null;}displayFont();return true;
     }
     try{
-      const data=await window.desktop.pcgFont({entries:[...pcgEntries].map(([code,hex])=>({code,hex})),order:$('pcg-order').value,layout:$('pcg-layout').value});
+      const data=await host.pcgFont({entries:[...pcgEntries].map(([code,hex])=>({code,hex})),order:$('pcg-order').value,layout:$('pcg-layout').value});
       if(revision!==pcgRevision)return;
       const face=await prepareFont({data});if(revision!==pcgRevision)return;
       document.fonts.add(face);if(pcgFontFace)document.fonts.delete(pcgFontFace);pcgFontFace=face;displayFont();return true;
@@ -57,7 +67,7 @@
   function sidebar(name){
     $('ank-panel').hidden=name!=='ank';$('pcg-panel').hidden=name!=='pcg';$('sidebar').classList.toggle('pcg-open',name==='pcg');
     document.querySelectorAll('[data-sidebar]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.sidebar===name)));
-    updateLayout();
+    sidebarResize.refresh();
   }
   const pcgImage=hex=>'data:image/svg+xml,'+encodeURIComponent(X1Pcg.svg(hex,$('pcg-order').value,$('pcg-layout').value));
   function pcgDetail(code){
@@ -116,7 +126,7 @@
   async function restoreFont() {
     const revision = fontRevision;
     try {
-      const info = await window.desktop?.currentFont?.();
+      const info = await host?.currentFont?.();
       if (!info) return;
       if (info.error) { notify(info.error,true); return; }
       const face = await prepareFont(info);
@@ -250,9 +260,10 @@
     $('newline').value = {'\r\n':'CRLF','\n':'LF','\r':'CR'}[doc.newline];
     document.querySelector('[data-command="undo"]').disabled = !doc.undoStack.length;
     document.querySelector('[data-command="redo"]').disabled = !doc.redoStack.length;
-    window.desktop?.state({dirty:doc.dirty});
+    host?.state({dirty:doc.dirty});
     if (caret !== undefined) setSelection(caret,end ?? caret);
     editor.scrollLeft = x; editor.scrollTop = y; syncScroll(); status();
+    contentChanged();
   }
   function applyBytes(bytes) {
     if (busy) return;
@@ -343,13 +354,13 @@
   }
   async function save(saveAs = false) {
     const snapshot = doc.bytes.slice();
-    const result = await window.desktop.save({bytes:Array.from(snapshot),saveAs});
+    const result = await host.save({bytes:Array.from(snapshot),saveAs});
     if (!result) return false;
     doc.markSaved(snapshot); render(...selection()); notify('保存しました · バイト検証済み'); return true;
   }
   async function canLeave() {
     if (!doc.dirty) return true;
-    const answer = await window.desktop.confirmDirty();
+    const answer = await host.confirmDirty();
     if (answer === 'discard') return true;
     if (answer === 'save') return save();
     return false;
@@ -373,24 +384,24 @@
     busy = true; editor.readOnly = true; document.body.classList.add('busy');
     try {
       if (name === 'font-load') {
-        const info = await window.desktop.chooseFont();
+        const info = await host.chooseFont();
         if (info) {
           fontRevision++;
           const face = await prepareFont(info);
-          if (await window.desktop.commitFont(info.token)) {
+          if (await host.commitFont(info.token)) {
             activateFont(info,face); notify(info.name+' を設定しました。次回起動時も使用します。');
           }
         }
       } else if (name === 'font-reset') {
-        if (await window.desktop.resetFont()) {
+        if (await host.resetFont()) {
           fontRevision++; activateFont({name:'内蔵フォント'},null); notify('内蔵フォントに戻しました。');
         }
       } else if (name === 'save' || name === 'save-as') await save(name === 'save-as');
       else if (name === 'new' || name === 'open' || name === 'close') {
         if (!(await canLeave())) return;
-        if (name === 'new') { window.desktop.newDocument(); load({name:'Untitled.bas',bytes:[]}); }
-        else if (name === 'open') { const data = await window.desktop.open(); if (data) load(data); }
-        else window.desktop.close();
+        if (name === 'new') { host.newDocument(); load({name:'Untitled.bas',bytes:[]}); }
+        else if (name === 'open') { const data = await host.open(); if (data) load(data); }
+        else host.close();
       }
     } catch (err) { notify(err.message,true); }
     finally { busy = false; editor.readOnly = false; document.body.classList.remove('busy'); editor.focus(); }
@@ -486,6 +497,7 @@
   if (window.ResizeObserver) new ResizeObserver(updateLayout).observe($('text-area'));
   else window.addEventListener('resize',updateLayout);
   document.fonts?.ready.then(updateLayout);
-  window.desktop?.onCommand(command); window.desktop?.onLoaded(load);
+  const sidebarResize=window.X1SidebarResize(updateLayout);
+  host?.onCommand(command); host?.onLoaded(load);
   setScale(); setWrap(); palette(); preview(hoverCode); renderPcgGrid(); render(0); displayFont();restoreFont();
 })();

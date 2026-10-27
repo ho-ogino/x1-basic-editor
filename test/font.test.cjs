@@ -86,3 +86,27 @@ test('built-in bitmap matches the pinned redistributable X1 compatible font',()=
   assert.equal(provenance.repository,'https://github.com/meister68k/X1_compatible_font');
   assert.ok(fs.existsSync(path.join(__dirname,'../assets/licenses/misaki.txt')));
 });
+
+test('browser font builder runs without Node and matches deterministic CJS bytes in every PCG mode',()=>{
+  const vm=require('node:vm'),context=vm.createContext({});
+  for(const file of ['keywords.js','syntax.js','pcg.js','font-builder.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),context);
+  assert.equal(vm.runInContext('typeof Buffer + ":" + typeof require',context),'undefined:undefined');
+  context.bitmap=require('../assets/x1-font.json');
+  const browserFont=vm.runInContext('X1FontBuilder.buildFont(bitmap)',context);
+  assert.equal(browserFont.constructor.name,'Uint8Array');
+  assert.deepEqual(Buffer.from(browserFont),buildFont(context.bitmap));
+  assert.equal(Buffer.isBuffer(buildFont(context.bitmap)),true);
+  const rom=vm.runInContext('new Uint8Array(2048)',context);rom[65*8]=128;
+  context.rom=rom;
+  assert.deepEqual(Buffer.from(vm.runInContext('X1FontBuilder.buildFontFromRom(rom)',context)),buildFontFromRom(Buffer.from(rom)));
+  for(const size of [0,2047,2049])assert.throws(()=>vm.runInContext(`X1FontBuilder.parseFontRom(new Uint8Array(${size}))`,context),/2048/);
+  assert.throws(()=>vm.runInContext('X1FontBuilder.parseFontRom(new Array(2048).fill(0))',context),/2048/);
+  context.entries=[{code:255,hex:'80402010080402010102040810204080AA55AA55AA55AA55'}];
+  for(const order of ['BRG','BGR','RGB','RBG','GBR','GRB'])for(const layout of ['planar','interleaved']){
+    context.order=order;context.layout=layout;
+    const bytes=Buffer.from(vm.runInContext('X1FontBuilder.buildFont(bitmap,entries,order,layout)',context));
+    assert.deepEqual(bytes,buildFont(context.bitmap,context.entries,order,layout));
+    let sum=0;for(let at=0;at<bytes.length;at+=4)sum=(sum+bytes.readUInt32BE(at))>>>0;
+    assert.equal(sum,0xb1b0afba);
+  }
+});

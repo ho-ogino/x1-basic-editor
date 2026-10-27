@@ -31,6 +31,7 @@ Windows では `start.cmd` も利用できます。初回だけ `npm ci` を実�
 
 - 通常のメモ帳と同じように選択・入力・削除できます。ASCII の英数字は通常の単語選択も可能です。
 - 右のパレットで、記号・カナ・制御コード・全256コードを選択できます。クリックすると選択範囲を置き換えます。
+- 編集欄と右欄の境界を左右にドラッグすると、右欄の幅を調整できます。境界にフォーカスして左右キーでも調整でき、Homeで既定幅へ戻せます。調整した幅は起動中だけ保持し、文字パレットとPCG一覧の切り替えでも引き継ぎます。
 - カーソル位置のコードと名称を下部に表示します。
 - HuBASIC の予約語は青、数値は緑、文字列は橙、コメントは緑灰色で表示します。変数は通常色、行頭のBASIC行番号は控えめな灰色です。`REM` と `'` のコメント、空白を省いた予約語、小数・指数・16/8/2進数、DATA の生テキストを判別します。色分けによってソースの文字・大文字小文字・バイト列を書き換えません。
 - 編集欄上部の「右端で折り返す」で、見えている幅に合わせて表示を折り返せます。ウィンドウ幅や文字倍率の変更に追従し、継続する表示行の左には `↪` を表示します。保存するバイト列や改行コードは変わりません。下部の行・桁は元のソース上の位置です。
@@ -152,7 +153,8 @@ macOS版はアドホック署名を付けますが、AppleのDeveloper ID署名�
 - `src/pcg.js`：PCG定義の検出・割り当て・配列と色の解析・一覧用SVG
 - `src/keywords.js`：`SLANGCompiler.HuBasic/Lexing/HuKeywords.cs` から取得した186語の予約語表（コンパイラ拡張の VSYNC も含む）
 - `src/file-store.cjs`：ファイルの読み書き、バックアップ、外部変更検知
-- `src/font-builder.cjs` / `src/font-settings.cjs`：X1フォントの読み込み・表示用フォント生成・設定保存
+- `src/font-builder.js` / `src/font-builder.cjs` / `src/font-settings.cjs`：ブラウザ共通のフォント生成・Node互換API・設定保存
+- `src/host.js` / `src/sidebar-resize.js`：入れ物の接続口・右欄の幅調整
 - `main.cjs` / `preload.cjs`：Electron のネイティブ操作と限定した IPC
 - `scripts/build-font.cjs`：8×8ドットからアプリ専用 TTF を生成
 - `assets/x1-font-source.txt`：参照文字表のドットデータ
@@ -160,6 +162,41 @@ macOS版はアドホック署名を付けますが、AppleのDeveloper ID署名�
 - `.github/workflows/build.yml` / `build/entitlements.mac.plist`：標準runnerでの配布ビルドとmacOS署名設定
 
 アプリは外部サイトや外部スクリプトを読み込まず、ネットワーク要求をブロックします。編集中のソースをサーバーへ送信しません。
+
+## iframeへの組み込み
+
+`src/`と`assets/`を一緒に取り込み、エディタをiframeで開きます。1ページに1つのエディタを置く構造なので、複数配置ではそれぞれiframeを使います。Electron以外では、そのiframe内で`host.js`より先にローカルのアダプター（例：`x1pen-host.js`）を読み、`window.X1Host`に下表のホスト実装を設定します。取り込み先のHTMLでこのscriptタグを追加してください。`host.js`は設定済みの`X1Host`を優先し、未設定ならElectronの`window.desktop`を使います。設定には起動前の同期処理を使い、読み込みを待つ場合はアダプター内部で待機します。
+
+```html
+<!-- codec.js / keywords.js / syntax.js / pcg.js / font-builder.js の後 -->
+<script src="x1pen-host.js"></script>
+<script src="host.js"></script>
+<script src="sidebar-resize.js"></script>
+<script src="editor.js"></script>
+```
+
+| ホストのメソッド | 呼び方・結果 |
+|---|---|
+| `onLoaded(callback)` | 読み込み通知先を登録。初期データの準備後に`callback({name, bytes})`を呼ぶ。`bytes`は0〜255の配列またはUint8Array。以後の外部読み込みもこの口で渡せる。未保存確認はホストが行う。 |
+| `onCommand(callback)` | コマンド通知先を登録。`callback('save')`などを呼び、返されたPromiseで完了を待てる。ボタンと同じ`new`・`open`・`save`・`save-as`・`undo`・`redo`などを使う。 |
+| `open()` | `{name, bytes}`、キャンセル時は`null`を返す（Promise可）。 |
+| `save({bytes, saveAs})` | `bytes`は通常の数値配列。保存できたらtruthy、失敗・キャンセルならfalsyを返す（Promise可）。このスナップショットが保存済みになる。保存の実体と名前管理はホストが担当。 |
+| `confirmDirty()` | 未保存確認で`'save'`・`'discard'`・`'cancel'`を返す（Promise可）。 |
+| `state({dirty})` | 現在の未保存状態を同期通知。タイトルや閉じる確認に使う。保存後も通知する。 |
+| `newDocument()` / `close()` | 新規作成時のホスト側の名前等のリセット／閉じる処理。同期で受け取る。 |
+| `currentFont()` | 任意。`{name, data}`を返す（Promise可）。`data`はTTFのバイト列、内蔵は`null`。 |
+| `chooseFont()` | フォント候補を選び、`{name, data, token}`または`null`を返す（Promise可）。 |
+| `commitFont(token)` / `resetFont()` | 候補の確定／内蔵への復帰に成功したらtruthyを返す（Promise可）。確定はフォント表示の検証後に呼ぶ。 |
+| `pcgFont({entries, order, layout})` | 選択中の基本字形にPCGを重ねたTTFバイト列を返す（Promise可）。`entries`は`{code, hex}`の配列。 |
+| `contentChanged({bytes, dirty})` | 任意。初期表示と、実際のバイト列が変わったときの通知。`bytes`は独立したUint8Arrayのコピー。 |
+
+フォント操作を提供する場合は上表のフォント用メソッドを実装してください。PCG生成にはブラウザの`X1FontBuilder`を使えます。`parseFontRom(bytes)`は2048バイトのUint8Arrayから256×8の配列を作り、`buildFont(bitmap, entries = [], order = 'BRG', layout = 'planar')`と`buildFontFromRom(bytes)`はTTFのUint8Arrayを返します。`bitmap`には同梱の`assets/x1-font.json`相当の配列、または読み込んだ独自フォントの配列を渡します。PCGには先に`pcg.js`を読み込んでください。別のwindow由来のROMは、そのiframe内の`Uint8Array.from(bytes)`で渡します。Node側の`require('./src/font-builder.cjs')`は従来どおりBufferを返します。
+
+`contentChanged`は入力・貼り付け・切り取り・挿入・置換・Undo/Redo・新規作成・読み込みによる変更を通知します。同一バイトへの置換、同一内容の再読み込み、保存だけの操作、カーソル移動や表示設定は通知しません。未保存状態だけの変化は`state`で受け取ってください。コールバックの例外は編集欄に通知し、編集と保存は続行できます。
+
+起動時、ホストの読み込みが非同期なら「初期の空文書」→「読み込んだ文書」の順で通知します。**ホストは自分の初期読み込みが終わるまで自動保存を抑制してください。** `onLoaded`の登録時に同期でデータを渡すホストでは、最初の通知がその文書になります。ホストからの読み込みも変更通知を発生させるため、自動保存ではその往復を考慮します。
+
+アダプターと親iframeの通信・ファイル保管方法は取り込み側が担当します。この接続口はホストの起動前設定だけを行い、CSPの緩和や汎用postMessage受信は追加しません。右欄の幅調整もiframe内でそのまま使えます。
 
 予約語の名称・綴りは、表示用の言語仕様データとして使用しています。生成元は同作者の [SLANG-compiler](https://github.com/h-o-soft/SLANG-compiler) の `HuKeywords.cs` で、参照ファイルのSHA-256を `src/keywords.js` の先頭コメントに記録しています。
 

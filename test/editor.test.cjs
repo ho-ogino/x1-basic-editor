@@ -12,6 +12,7 @@ function setup(bytes=fixture,options={}){
     async save(payload){saved=Uint8Array.from(payload.bytes);return {name:'test.bas',bytes:payload.bytes};},
     async confirmDirty(){return 'cancel';},async open(){return null;},newDocument(){},close(){},
     async pcgFont(payload){return Array.from(require('../src/font-builder.cjs').buildFont(require('../assets/x1-font.json'),payload.entries,payload.order,payload.layout));},...options.desktop};
+  if(options.hostOnly){w.X1Host=w.desktop;delete w.desktop;}
   const faces=new Set();
   w.FontFace=class {
     constructor(family,data){this.family=family;this.data=data;}
@@ -28,6 +29,9 @@ function setup(bytes=fixture,options={}){
   w.eval(fs.readFileSync(path.join(base,'keywords.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'syntax.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'pcg.js'),'utf8'));
+  w.eval(fs.readFileSync(path.join(base,'font-builder.js'),'utf8'));
+  w.eval(fs.readFileSync(path.join(base,'host.js'),'utf8'));
+  w.eval(fs.readFileSync(path.join(base,'sidebar-resize.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'editor.js'),'utf8'));
   onLoad({name:'test.bas',bytes:Array.from(bytes)});
   const $=id=>w.document.getElementById(id),editor=$('editor');
@@ -37,7 +41,7 @@ function setup(bytes=fixture,options={}){
     editor.dispatchEvent(new w.InputEvent('input',{inputType:'insertText',bubbles:true}));
   }
   const save=async()=>{await onCommand('save');return Buffer.from(saved);};
-  return {dom,w,$,editor,type,save,faces,highlights,command:onCommand,get dirty(){return latestState?.dirty;}};
+  return {dom,w,$,editor,type,save,faces,highlights,command:onCommand,load:onLoad,get dirty(){return latestState?.dirty;}};
 }
 test('renderer shows readable ASCII, X1 symbols, line count and exact unchanged save',async()=>{
   const ui=setup();try{
@@ -417,4 +421,73 @@ test('selection at blank lines and EOF is valid and unsupported highlight engine
     assert.equal(fallback.$('text-area').classList.contains('mirror-selection'),false);
     assert.deepEqual(await fallback.save(),Buffer.from('ABC'));
   }finally{fallback.dom.window.close();}
+});
+
+test('browser-only host can load, edit, save and generate PCG fonts without desktop or Node',async()=>{
+  const original=Buffer.from(`10 DEFCHR$(65)=STRING$(24,255)\r\n20 PRINT "A"\n`);
+  const events=[];
+  const ui=setup(original,{hostOnly:true,desktop:{contentChanged:payload=>events.push(payload)}});
+  try{
+    assert.equal(ui.w.desktop,undefined);assert.equal(ui.w.Buffer,undefined);assert.equal(ui.w.require,undefined);
+    const bitmap=JSON.parse(JSON.stringify(require('../assets/x1-font.json')));
+    ui.w.X1Host.pcgFont=p=>ui.w.X1FontBuilder.buildFont(bitmap,p.entries,p.order,p.layout);
+    ui.editor.select();await ui.command('pcg-setup');assert.equal(ui.faces.size,1);
+    assert.equal(events.length,2);assert.equal(events[0].bytes.length,0);assert.deepEqual(Buffer.from(events[1].bytes),original);
+    ui.editor.setSelectionRange(0,0);ui.type('1');assert.equal(events.at(-1).dirty,true);
+    assert.deepEqual(await ui.save(),Buffer.concat([Buffer.from('1'),original]));
+    assert.equal(ui.dirty,false);assert.equal(events.length,3);
+    await ui.command('new');assert.equal(ui.editor.value,'');assert.equal(events.at(-1).bytes.length,0);
+  }finally{ui.dom.window.close();}
+});
+
+test('contentChanged covers edits, undo/redo, load/new/open and suppresses byte-equal and display changes',async()=>{
+  const original=Buffer.from([65,13,10,0,0x87,10,66,13]);
+  const events=[],ui=setup(original,{desktop:{contentChanged:p=>events.push({bytes:Buffer.from(p.bytes),dirty:p.dirty}),
+    async confirmDirty(){return 'discard';},async open(){return {bytes:[90]};}}});
+  try{
+    assert.equal(events.length,2);assert.deepEqual(events[1],{bytes:original,dirty:false});
+    ui.load({bytes:Array.from(original)});assert.equal(events.length,2); // Different array, identical bytes.
+    ui.editor.setSelectionRange(0,1);ui.type('A');assert.equal(events.length,2);
+    ui.editor.setSelectionRange(0,1);ui.type('Z');assert.equal(events.length,3);assert.equal(events.at(-1).dirty,true);
+    await ui.command('undo');assert.deepEqual(events.at(-1),{bytes:original,dirty:false});
+    await ui.command('redo');assert.equal(events.length,5);
+    await ui.save();assert.equal(events.length,5);assert.equal(ui.dirty,false);
+    ui.editor.setSelectionRange(0,1);ui.type('漢');assert.equal(events.length,5);
+    ui.$('word-wrap').click();await ui.command('zoom-in');ui.editor.dispatchEvent(new ui.w.Event('select'));
+    ui.w.document.querySelector('[data-sidebar="pcg"]').click();assert.equal(events.length,5);
+    ui.editor.setSelectionRange(0,1);ui.type('Z');assert.equal(events.length,5); // Byte-equal replacement.
+    await ui.command('new');assert.equal(events.length,6);assert.equal(events.at(-1).bytes.length,0);
+    await ui.command('open');assert.equal(events.length,7);assert.deepEqual(events.at(-1),{bytes:Buffer.from('Z'),dirty:false});
+    ui.load({bytes:Array.from({length:256},(_,i)=>i)});assert.deepEqual(events.at(-1).bytes,Buffer.from(Array.from({length:256},(_,i)=>i)));
+  }finally{ui.dom.window.close();}
+});
+
+test('contentChanged reports IME, palette, paste/cut and replace-all with isolated snapshots',async()=>{
+  const events=[],ui=setup(Buffer.from('ABAB\r\n'),{desktop:{contentChanged:p=>{events.push(Buffer.from(p.bytes));p.bytes.fill(255);}}});
+  try{
+    assert.deepEqual(await ui.save(),Buffer.from('ABAB\r\n'));
+    ui.editor.setSelectionRange(0,0);ui.w.document.querySelector('[data-code="135"]').click();
+    assert.equal(events.at(-1)[0],135);await ui.command('undo');
+    ui.editor.setSelectionRange(0,0);ui.editor.dispatchEvent(new ui.w.CompositionEvent('compositionstart'));
+    ui.editor.setRangeText('ガ',0,0,'end');ui.editor.dispatchEvent(new ui.w.CompositionEvent('compositionend'));
+    assert.deepEqual(events.at(-1).subarray(0,2),Buffer.from([0xb6,0xde]));await ui.command('undo');
+    const clipboardData={setData(){},getData:type=>type==='text/plain'?'C':''};
+    function clipboard(type){const event=new ui.w.Event(type,{cancelable:true});Object.defineProperty(event,'clipboardData',{value:clipboardData});ui.editor.dispatchEvent(event);}
+    ui.editor.setSelectionRange(0,1);clipboard('cut');assert.deepEqual(events.at(-1),Buffer.from('BAB\r\n'));
+    clipboard('paste');assert.deepEqual(events.at(-1),Buffer.from('CBAB\r\n'));await ui.command('undo');await ui.command('undo');
+    ui.$('find-text').value='AB';ui.$('replace-text').value='Z';ui.$('replace-all').click();assert.deepEqual(events.at(-1),Buffer.from('ZZ\r\n'));
+    assert.deepEqual(await ui.save(),Buffer.from('ZZ\r\n'));await ui.command('undo');assert.deepEqual(await ui.save(),Buffer.from('ABAB\r\n'));
+  }finally{ui.dom.window.close();}
+});
+
+test('throwing and rejecting content callbacks cannot prevent rendering, subsequent edits or save',async()=>{
+  for(const asynchronous of [false,true]){
+    let calls=0;
+    const ui=setup(Buffer.from('A'),{desktop:{contentChanged(){calls++;if(asynchronous)return Promise.reject(Error('host failure'));throw Error('host failure');}}});
+    try{
+      await settle();assert.equal(ui.editor.value,'A');assert.match(ui.$('notice').textContent,/host failure/);
+      ui.editor.setSelectionRange(0,1);ui.type('B');await settle();assert.equal(calls,3);
+      assert.deepEqual(await ui.save(),Buffer.from('B'));assert.equal(ui.dirty,false);
+    }finally{ui.dom.window.close();}
+  }
 });
