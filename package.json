@@ -1,0 +1,78 @@
+{
+  "name": "x1-basic-editor",
+  "productName": "X1 BASIC Editor",
+  "version": "0.1.9",
+  "description": "SHARP X1 BASIC editor with byte-preserving editing and PCG previews",
+  "private": true,
+  "license": "MIT",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "build:font": "node scripts/build-font.cjs",
+    "update:keywords": "node scripts/update-keywords.cjs",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "local.x1.basic-editor",
+    "productName": "X1 BASIC Editor",
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "src/**/*",
+      "assets/**/*",
+      "README.md",
+      "THIRD-PARTY-NOTICES.md",
+      "LICENSE"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": "zip",
+      "artifactName": "${name}-${version}-mac-${arch}.${ext}",
+      "identity": "-",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": false
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    },
+    "extraFiles": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.app.txt"
+      },
+      {
+        "from": "THIRD-PARTY-NOTICES.md",
+        "to": "THIRD-PARTY-NOTICES.md"
+      },
+      {
+        "from": "assets/licenses",
+        "to": "licenses"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
+    "jsdom": "30.1.3"
+  },
+  "author": "Hiroshi OGINO",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ho-ogino/x1-basic-editor.git"
+  },
+  "homepage": "https://github.com/ho-ogino/x1-basic-editor#readme",
+  "bugs": {
+    "url": "https://github.com/ho-ogino/x1-basic-editor/issues"
+  }
+}

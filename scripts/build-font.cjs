@@ -1,0 +1,10 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path');
+const {buildFont}=require('../src/font-builder.cjs');
+const base=path.resolve(__dirname,'..');
+const source=fs.readFileSync(path.join(base,'assets/x1-font-source.txt'),'utf8').trim();
+const bitmap=JSON.parse(source.replace(/0x([0-9a-f]+)/gi,(_,n)=>String(parseInt(n,16))));
+const font=buildFont(bitmap);
+fs.writeFileSync(path.join(base,'assets/x1-basic.ttf'),font);
+fs.writeFileSync(path.join(base,'assets/x1-font.json'),JSON.stringify(bitmap));
+console.log('Built X1 font:',font.length,'bytes');
