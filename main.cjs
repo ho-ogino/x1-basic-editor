@@ -22,8 +22,8 @@ function buildMenu() {
   const item = (label, accelerator, cmd) => ({ label, accelerator, click:() => command(cmd) });
   const menu = [
     ...(process.platform === 'darwin' ? [{role:'appMenu'}] : []),
-    { label:'ファイル', submenu:[item('新規','CmdOrCtrl+N','new'), item('開く…','CmdOrCtrl+O','open'),
-      item('保存','CmdOrCtrl+S','save'), item('名前を付けて保存…','CmdOrCtrl+Shift+S','save-as'),
+    { label:'ファイル', submenu:[item('新規','CmdOrCtrl+N','new'), item('インポート…','CmdOrCtrl+O','open'),
+      item('エクスポート','CmdOrCtrl+S','save'), item('名前を付けて保存…','CmdOrCtrl+Shift+S','save-as'),
       {type:'separator'}, item('閉じる','CmdOrCtrl+W','close')] },
     { label:'編集', submenu:[item('元に戻す','CmdOrCtrl+Z','undo'), item('やり直す','CmdOrCtrl+Shift+Z','redo'),
       {type:'separator'}, {role:'cut',label:'切り取り'},{role:'copy',label:'コピー'}, {role:'paste',label:'貼り付け'},
@@ -94,8 +94,8 @@ ipcMain.handle('save', async (_event, payload) => {
   finally { saving = false; }
 });
 ipcMain.handle('confirm-dirty', async () => {
-  const result = await dialog.showMessageBox(win,{type:'question',message:'変更を保存しますか？',
-    detail:'保存しない変更は失われます。', buttons:['保存','保存しない','キャンセル'],defaultId:0,cancelId:2,noLink:true});
+  const result = await dialog.showMessageBox(win,{type:'question',message:'変更をエクスポートしますか？',
+    detail:'エクスポートしていない変更は失われます。', buttons:['エクスポート','エクスポートしない','キャンセル'],defaultId:0,cancelId:2,noLink:true});
   return ['save','discard','cancel'][result.response];
 });
 ipcMain.on('state', (_event, state) => {

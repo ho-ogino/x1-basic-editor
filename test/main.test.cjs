@@ -2,9 +2,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const base=path.join(__dirname,'..');
-function setup(){
+function setup(confirmation=0){
   const handlers=new Map(),listeners=new Map(),events=new Map(),sent=[],saves=[],titles=[],edited=[];
-  let ready,resolveInitial;
+  let ready,resolveInitial,menu;const dialogs=[];
   const initial=new Promise(resolve=>{resolveInitial=resolve;});
   const documentA={path:path.resolve('A.bas'),name:'A.bas',bytes:[65],hash:'a'};
   const documentB={path:path.resolve('B.bas'),name:'B.bas',bytes:[66],hash:'b'};
@@ -15,9 +15,9 @@ function setup(){
         setWindowOpenHandler(){},session:{setPermissionRequestHandler(){},webRequest:{onBeforeRequest(){}}}};}
       once(){} on(){} loadFile(){} setDocumentEdited(value){edited.push(value);} setTitle(value){titles.push(value);} close(){}
     },
-    Menu:{setApplicationMenu(){},buildFromTemplate:items=>items},
+    Menu:{setApplicationMenu(value){menu=value;},buildFromTemplate:items=>items},
     dialog:{async showOpenDialog(){return {canceled:false,filePaths:[documentB.path]};},
-      async showSaveDialog(){return {canceled:false,filePath:path.resolve('new.bas')};},async showMessageBox(){return {response:0};}},
+      async showSaveDialog(){return {canceled:false,filePath:path.resolve('new.bas')};},async showMessageBox(_win,options){dialogs.push(options);return {response:confirmation};}},
     ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:(name,fn)=>listeners.set(name,fn)}
   };
   const store={MAX_BYTES:2*1024*1024,readDocument:file=>file===documentA.path?initial:Promise.resolve(documentB),
@@ -27,7 +27,7 @@ function setup(){
     require:requireMock,__dirname:base,Buffer,console,process:{platform:'win32',argv:['electron','.',documentA.path]}
   });
   ready();
-  return {sent,saves,titles,edited,documentA,documentB,start:()=>events.get('did-finish-load')(),resolve:()=>resolveInitial(documentA),
+  return {sent,saves,titles,edited,menu,dialogs,documentA,documentB,start:()=>events.get('did-finish-load')(),resolve:()=>resolveInitial(documentA),
     invoke:(name,payload)=>handlers.get(name)({},payload),send:(name,payload)=>listeners.get(name)({},payload)};
 }
 test('command-line document loads normally when no user action supersedes it',async()=>{
@@ -52,5 +52,20 @@ test('new document and Save As supersede a pending startup load',async()=>{
     const app=setup(),pending=app.start();
     if(action==='new-document')app.send(action);else await app.invoke('save',{bytes:[67],saveAs:true});
     app.resolve();await pending;assert.equal(app.sent.length,0);
+  }
+});
+
+test('native import/export menu keeps existing commands and accelerators',()=>{
+  const app=setup(),file=app.menu.find(item=>item.label==='ファイル');
+  const imports=file.submenu.find(item=>item.label==='インポート…'),exports=file.submenu.find(item=>item.label==='エクスポート');
+  assert.equal(imports.accelerator,'CmdOrCtrl+O');assert.equal(exports.accelerator,'CmdOrCtrl+S');
+  imports.click();exports.click();assert.deepEqual(app.sent,[['command','open'],['command','save']]);
+  assert.ok(file.submenu.some(item=>item.label==='新規'));assert.ok(file.submenu.some(item=>item.label==='名前を付けて保存…'));
+});
+test('dirty confirmation uses export wording and preserves save/discard/cancel responses',async()=>{
+  for(const [response,expected] of ['save','discard','cancel'].entries()){
+    const app=setup(response);assert.equal(await app.invoke('confirm-dirty'),expected);
+    assert.equal(app.dialogs[0].message,'変更をエクスポートしますか？');
+    assert.deepEqual(Array.from(app.dialogs[0].buttons),['エクスポート','エクスポートしない','キャンセル']);
   }
 });
