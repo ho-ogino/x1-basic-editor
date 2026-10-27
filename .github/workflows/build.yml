@@ -126,8 +126,11 @@ jobs:
             echo "Release tag does not match package.json" >&2
             exit 1
           fi
+          # GitHub normalizes spaces in attachment names. Use an explicit safe name
+          # before computing checksums so downloaded filenames match SHA256SUMS.
+          mv "release-assets/X1 BASIC Editor $version.exe" "release-assets/x1-basic-editor-$version-win-x64.exe"
           assets=(
-            "release-assets/X1 BASIC Editor $version.exe"
+            "release-assets/x1-basic-editor-$version-win-x64.exe"
             "release-assets/x1-basic-editor-$version-mac-arm64.zip"
             "release-assets/x1-basic-editor-$version-mac-x64.zip"
           )

@@ -2,7 +2,7 @@
 
 ## 自動テスト
 
-X1 BASIC Editor 0.1.10 / Windows x64 / Node.js 24 で検証。`npm test` の73件が成功。
+X1 BASIC Editor 0.1.10 / Node.js 24で検証。Windows x64、macOS arm64、macOS x64の各標準runnerで `npm test` の73件が成功。
 
 - 同梱する `test/fixtures/editor-sample.bas`（5371 bytes・77 CRLF）の読み込みと保存時のバイト保持。
 - 全256コード、NUL、EOF、末尾改行、CRLF / LF / CRの混在と編集範囲外の保持。
@@ -27,10 +27,10 @@ X1 BASIC Editor 0.1.10 / Windows x64 / Node.js 24 で検証。`npm test` の73�
 
 ## ビルドと実画面
 
-- Windows x64のポータブル版を `npm run dist -- --win portable --x64` で生成。
+- Windows x64のポータブル版、macOS arm64 / x64のZIPをGitHub標準runnerで生成。
 - 改名前の試作ではWindows上で利用者が編集・フォント・PCG等の動作を確認。
 - 改名と独立後のアプリは、利用者の希望により起動・Computer Useを実施していません。実際の選択色・PCG描画・IMEイベント順序は実画面での確認が残ります。
-- macOS / Linuxは実機確認していません。同じソースと各OSのElectronでビルドする構成です。
+- macOS両アーキテクチャで `codesign --verify --deep --strict` が成功。起動とGUIの確認、Linuxでのビルド・動作確認は未実施です。
 
 ## GitHub標準runner用workflow
 
@@ -40,7 +40,9 @@ X1 BASIC Editor 0.1.10 / Windows x64 / Node.js 24 で検証。`npm test` の73�
 - actionlint 1.7.12による構文・式の静的検証が成功。
 - electron-builder 26.18.0の設定スキーマ検証、macOS entitlementsのXML解析が成功。
 - Release処理をローカルで模擬実行し、3成果物が揃う場合の下書き作成コマンド、Intel版不足時の停止、タグ不一致時の停止を確認。GitHub操作のコマンドはモックに置き換え、外部への書き込みは行っていません。
-- GitHub上のworkflowとmacOS実ビルド・署名検証は、まだ実行していません。
+- [v0.1.10のGitHub Actions](https://github.com/ho-ogino/x1-basic-editor/actions/runs/40460356768)で全ジョブが成功。
+- 配布物のSHA-256、macOSのMach-Oアーキテクチャ、Windows / macOSの同梱ソース・ライセンス・非公開データ除外を確認。
+- ライセンス文書は `extraResources` でmacOSのContents/Resources配下へ配置。Release添付時はWindowsのファイル名を英数字へそろえてからチェックサムを生成します。
 
 ## 既知の範囲
 
