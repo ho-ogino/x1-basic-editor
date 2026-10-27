@@ -1,6 +1,6 @@
 # X1 BASIC Editor
 
-SHARP X1 のアスキーセーブ BASIC を、X1 のドット字形で編集する小さなデスクトップエディタです。Windows / macOS / Linux で同じソースを使います。ファイルの内容を Shift-JIS や UTF-8 として自動変換しません。
+X1 のアスキーセーブ BASIC を、X1 のドット字形で編集する小さなデスクトップエディタです。Windows / macOS / Linux で同じソースを使います。ファイルの内容を Shift-JIS や UTF-8 として自動変換しません。
 
 ## 起動
 

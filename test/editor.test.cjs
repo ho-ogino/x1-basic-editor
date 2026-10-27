@@ -7,8 +7,8 @@ const X1=require('../src/codec.js');
 const fixture=fs.readFileSync(path.join(__dirname,'fixtures/editor-sample.bas'));
 function setup(bytes=fixture,options={}){
   const dom=new JSDOM(fs.readFileSync(path.join(base,'index.html'),'utf8'),{runScripts:'outside-only',pretendToBeVisual:true});
-  const w=dom.window;let onLoad,onCommand,saved;
-  w.desktop={state(){},onLoaded(fn){onLoad=fn;},onCommand(fn){onCommand=fn;},
+  const w=dom.window;let onLoad,onCommand,saved,latestState;
+  w.desktop={state(value){latestState=value;},onLoaded(fn){onLoad=fn;},onCommand(fn){onCommand=fn;},
     async save(payload){saved=Uint8Array.from(payload.bytes);return {name:'test.bas',bytes:payload.bytes};},
     async confirmDirty(){return 'cancel';},async open(){return null;},newDocument(){},close(){},
     async pcgFont(payload){return Array.from(require('../src/font-builder.cjs').buildFont(require('../assets/x1-font.json'),payload.entries,payload.order,payload.layout));},...options.desktop};
@@ -37,7 +37,7 @@ function setup(bytes=fixture,options={}){
     editor.dispatchEvent(new w.InputEvent('input',{inputType:'insertText',bubbles:true}));
   }
   const save=async()=>{await onCommand('save');return Buffer.from(saved);};
-  return {dom,w,$,editor,type,save,faces,highlights,command:onCommand};
+  return {dom,w,$,editor,type,save,faces,highlights,command:onCommand,get dirty(){return latestState?.dirty;}};
 }
 test('renderer shows readable ASCII, X1 symbols, line count and exact unchanged save',async()=>{
   const ui=setup();try{
@@ -104,7 +104,7 @@ test('unsupported typed text leaves selection, document, and dirty state unchang
   const ui=setup();try{
     ui.editor.setSelectionRange(3,5);ui.type('🙂');
     assert.equal(ui.editor.selectionStart,3);assert.equal(ui.editor.selectionEnd,5);
-    assert.equal(ui.$('dirty-state').textContent,'保存済み');assert.deepEqual(await ui.save(),fixture);
+    assert.equal(ui.dirty,false);assert.deepEqual(await ui.save(),fixture);
   }finally{ui.dom.window.close();}
 });
 test('actual beforeinput selection disambiguates repeated input and mixed-EOL backspace',async()=>{
@@ -127,7 +127,7 @@ test('soft wrap toggles without changing bytes, selection, dirty state or real n
     ui.$('word-wrap').checked=true;ui.$('word-wrap').dispatchEvent(new ui.w.Event('change'));
     assert.equal(ui.editor.wrap,'soft');assert.equal(ui.$('text-area').classList.contains('wrapped'),true);
     assert.equal(ui.editor.value,originalText);assert.equal(ui.editor.selectionStart,40);assert.equal(ui.editor.selectionEnd,57);
-    assert.equal(ui.$('dirty-state').textContent,'保存済み');assert.deepEqual(await ui.save(),fixture);
+    assert.equal(ui.dirty,false);assert.deepEqual(await ui.save(),fixture);
     ui.$('word-wrap').checked=false;ui.$('word-wrap').dispatchEvent(new ui.w.Event('change'));
     assert.equal(ui.editor.wrap,'off');assert.equal(ui.editor.value,originalText);
     assert.equal(ui.$('line-numbers').textContent.split('\n').length,78);
@@ -190,7 +190,7 @@ test('loading a font commits only after validation and preserves text, selection
     ui.editor.setSelectionRange(27,43);await ui.command('font-load');
     assert.equal(committed,'candidate');assert.equal(ui.$('font-name').textContent,'FNT0808.X1');assert.equal(ui.faces.size,1);
     assert.equal(ui.editor.selectionStart,27);assert.equal(ui.editor.selectionEnd,43);
-    assert.equal(ui.$('dirty-state').textContent,'保存済み');assert.deepEqual(await ui.save(),fixture);
+    assert.equal(ui.dirty,false);assert.deepEqual(await ui.save(),fixture);
   }finally{ui.dom.window.close();}
 });
 test('saved font is restored on startup, cancel keeps it, and built-in reset clears it',async()=>{
@@ -226,7 +226,7 @@ test('PCG setup fills 16x16 grid and switches fonts without changing selection, 
     assert.equal(ui.$('pcg-order').value,'BRG');assert.equal(ui.$('pcg-panel').hidden,false);
     assert.equal(ui.faces.size,1);assert.match(ui.w.document.documentElement.style.getPropertyValue('--x1-font'),/^X1Custom/);
     assert.equal(ui.editor.selectionStart,0);assert.equal(ui.editor.selectionEnd,end);
-    assert.equal(ui.$('dirty-state').textContent,'保存済み');assert.deepEqual(await ui.save(),original);
+    assert.equal(ui.dirty,false);assert.deepEqual(await ui.save(),original);
     ui.$('pcg-enabled').checked=false;ui.$('pcg-enabled').dispatchEvent(new ui.w.Event('change'));await settle();
     assert.equal(ui.faces.size,0);assert.equal(ui.w.document.documentElement.style.getPropertyValue('--x1-font'),'X1');
     assert.equal(ui.$('pcg-grid').querySelectorAll('button.defined').length,2);
@@ -328,7 +328,7 @@ test('PCG defaults to quoted strings only and switches scope without touching by
     ui.$('pcg-strings-only').checked=false;ui.$('pcg-strings-only').dispatchEvent(new ui.w.Event('change'));
     assert.equal(ui.$('text-area').classList.contains('pcg-strings-only'),false);
     assert.equal(ui.editor.selectionStart,3);assert.equal(ui.editor.selectionEnd,8);
-    assert.equal(ui.$('dirty-state').textContent,'保存済み');assert.deepEqual(await ui.save(),original);
+    assert.equal(ui.dirty,false);assert.deepEqual(await ui.save(),original);
     ui.$('pcg-strings-only').checked=true;ui.$('pcg-strings-only').dispatchEvent(new ui.w.Event('change'));
     assert.equal(ui.$('text-area').classList.contains('pcg-strings-only'),true);
     ui.editor.setSelectionRange(9,12);ui.type('A');
@@ -347,11 +347,11 @@ test('PCG definitions, layout, order, disabled display and scope survive opening
     ui.$('pcg-enabled').checked=false;ui.$('pcg-enabled').dispatchEvent(new ui.w.Event('change'));
     ui.$('pcg-strings-only').checked=false;ui.$('pcg-strings-only').dispatchEvent(new ui.w.Event('change'));
     await ui.command('open');
-    assert.equal(ui.$('filename').textContent,'program.bas');assert.equal(ui.$('pcg-count').textContent,'1 / 256 文字を定義');
+    assert.equal(ui.editor.value,program.toString('ascii').replaceAll('\r\n','\n'));assert.equal(ui.$('pcg-count').textContent,'1 / 256 文字を定義');
     assert.equal(ui.$('pcg-layout').value,'interleaved');assert.equal(ui.$('pcg-order').value,'RGB');
     assert.equal(ui.$('pcg-enabled').checked,false);assert.equal(ui.$('pcg-strings-only').checked,false);
     ui.$('pcg-enabled').checked=true;ui.$('pcg-enabled').dispatchEvent(new ui.w.Event('change'));await settle();assert.equal(ui.faces.size,1);
-    assert.equal(ui.$('dirty-state').textContent,'保存済み');assert.deepEqual(await ui.save(),program);
+    assert.equal(ui.dirty,false);assert.deepEqual(await ui.save(),program);
     const fresh=setup();try{assert.equal(fresh.$('pcg-count').textContent,'0 / 256 文字を定義');assert.equal(fresh.$('pcg-strings-only').checked,true);}finally{fresh.dom.window.close();}
   }finally{ui.dom.window.close();}
 });

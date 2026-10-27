@@ -2,7 +2,7 @@
   "name": "x1-basic-editor",
   "productName": "X1 BASIC Editor",
   "version": "0.1.10",
-  "description": "SHARP X1 BASIC editor with byte-preserving editing and PCG previews",
+  "description": "X1 BASIC editor with byte-preserving editing and PCG previews",
   "private": true,
   "license": "MIT",
   "main": "main.cjs",
