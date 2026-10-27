@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const base=path.join(__dirname,'..');
 function setup(){
-  const handlers=new Map(),listeners=new Map(),events=new Map(),sent=[],saves=[];
+  const handlers=new Map(),listeners=new Map(),events=new Map(),sent=[],saves=[],titles=[],edited=[];
   let ready,resolveInitial;
   const initial=new Promise(resolve=>{resolveInitial=resolve;});
   const documentA={path:path.resolve('A.bas'),name:'A.bas',bytes:[65],hash:'a'};
@@ -13,7 +13,7 @@ function setup(){
     BrowserWindow:class{
       constructor(){this.webContents={once:(name,fn)=>events.set(name,fn),on(){},send:(...args)=>sent.push(args),
         setWindowOpenHandler(){},session:{setPermissionRequestHandler(){},webRequest:{onBeforeRequest(){}}}};}
-      once(){} on(){} loadFile(){} setDocumentEdited(){} setTitle(){} close(){}
+      once(){} on(){} loadFile(){} setDocumentEdited(value){edited.push(value);} setTitle(value){titles.push(value);} close(){}
     },
     Menu:{setApplicationMenu(){},buildFromTemplate:items=>items},
     dialog:{async showOpenDialog(){return {canceled:false,filePaths:[documentB.path]};},
@@ -27,12 +27,15 @@ function setup(){
     require:requireMock,__dirname:base,Buffer,console,process:{platform:'win32',argv:['electron','.',documentA.path]}
   });
   ready();
-  return {sent,saves,documentA,documentB,start:()=>events.get('did-finish-load')(),resolve:()=>resolveInitial(documentA),
+  return {sent,saves,titles,edited,documentA,documentB,start:()=>events.get('did-finish-load')(),resolve:()=>resolveInitial(documentA),
     invoke:(name,payload)=>handlers.get(name)({},payload),send:(name,payload)=>listeners.get(name)({},payload)};
 }
 test('command-line document loads normally when no user action supersedes it',async()=>{
   const app=setup(),pending=app.start();app.send('state',{dirty:false});app.resolve();await pending;
   assert.equal(app.sent.length,1);assert.equal(app.sent[0][0],'loaded');assert.equal(app.sent[0][1].name,'A.bas');
+  app.send('state',{dirty:false});app.send('state',{dirty:true});app.send('state',{dirty:false});
+  assert.deepEqual(app.titles.slice(-3),['A.bas — X1 BASIC Editor','● A.bas — X1 BASIC Editor','A.bas — X1 BASIC Editor']);
+  assert.deepEqual(app.edited.slice(-3),[false,true,false]);
 });
 test('late startup load cannot replace edits, even when Undo restores the clean state',async()=>{
   const app=setup(),pending=app.start();app.send('state',{dirty:true});app.send('state',{dirty:false});

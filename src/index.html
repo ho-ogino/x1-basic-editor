@@ -16,8 +16,11 @@
       <span class="separator"></span><button data-command="undo" title="元に戻す">↶</button><button data-command="redo" title="やり直す">↷</button>
       <button data-command="find">検索</button><button data-command="help" title="使い方">?</button>
     </nav>
+    <div class="display-controls" role="group" aria-label="ソースの表示設定">
+      <label class="wrap-toggle"><input id="word-wrap" type="checkbox" checked>右端で折り返す</label>
+      <label>倍率 <select id="scale" aria-label="文字の倍率"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option><option value="4">4×</option></select></label>
+    </div>
   </header>
-  <section class="document-bar"><strong id="filename">Untitled.bas</strong><span id="dirty-state">保存済み</span><span class="file-kind">X1 / 8-bit</span></section>
   <section id="search-panel" hidden aria-label="検索と置換">
     <label>検索 <input id="find-text" placeholder="文字、または \x87 / \{heart}"></label>
     <label>置換 <input id="replace-text"></label>
@@ -27,7 +30,6 @@
   </section>
   <main>
     <section class="editor-pane" aria-label="ソース編集">
-      <div class="editor-heading"><span>SOURCE</span><span>制御コードは青色で表示</span><label class="wrap-toggle"><input id="word-wrap" type="checkbox" checked>右端で折り返す</label><label>倍率 <select id="scale" aria-label="文字の倍率"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option><option value="4">4×</option></select></label></div>
       <div id="editor-area">
         <div id="gutter" aria-hidden="true"><pre id="line-numbers">1</pre></div>
         <div id="text-area" class="wrapped">

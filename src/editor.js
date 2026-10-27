@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const editor = $('editor'), mirror = $('mirror'), doc = new X1.ByteDocument();
-  let filename = 'Untitled.bas', selectionBefore = [0,0], pendingInputType = '', busy = false, composing = false, group = 'symbols';
+  let selectionBefore = [0,0], pendingInputType = '', busy = false, composing = false, group = 'symbols';
   let noticeTimer, hoverCode = 0x87;
   let renderedLines = [];
   const mirrorSelection=typeof window.Highlight==='function'&&Boolean(window.CSS?.highlights);
@@ -245,8 +245,6 @@
     });
     mirror.replaceChildren(fragment); updateLayout();
     $('empty-hint').hidden = doc.bytes.length > 0;
-    $('filename').textContent = filename;
-    $('dirty-state').textContent = doc.dirty ? '未保存の変更' : '保存済み'; $('dirty-state').classList.toggle('dirty',doc.dirty);
     const counts = doc.view.counts;
     $('eol-info').textContent = '既存：' + (Object.entries(counts).filter(([,n]) => n).map(([name,n]) => `${name} ${n}`).join(' / ') || 'なし');
     $('newline').value = {'\r\n':'CRLF','\n':'LF','\r':'CR'}[doc.newline];
@@ -347,7 +345,7 @@
     const snapshot = doc.bytes.slice();
     const result = await window.desktop.save({bytes:Array.from(snapshot),saveAs});
     if (!result) return false;
-    filename = result.name; doc.markSaved(snapshot); render(...selection()); notify('保存しました · バイト検証済み'); return true;
+    doc.markSaved(snapshot); render(...selection()); notify('保存しました · バイト検証済み'); return true;
   }
   async function canLeave() {
     if (!doc.dirty) return true;
@@ -356,7 +354,7 @@
     if (answer === 'save') return save();
     return false;
   }
-  function load(data) { cancelPcgImport();doc.load(data.bytes); filename = data.name; editor.scrollTop = 0; editor.scrollLeft = 0; render(0); }
+  function load(data) { cancelPcgImport();doc.load(data.bytes); editor.scrollTop = 0; editor.scrollLeft = 0; render(0); }
   async function command(name) {
     if (busy) return;
     if(name==='pcg-setup'){await setupPcg();return;}
