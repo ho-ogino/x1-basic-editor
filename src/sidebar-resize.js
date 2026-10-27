@@ -10,8 +10,8 @@ window.X1SidebarResize = function(onResize) {
   function refresh(){
     const {min,max}=bounds();
     if(manualWidth!==null){
-      manualWidth=Math.max(min,Math.min(max,manualWidth));
-      sidebar.style.setProperty('--sidebar-width',manualWidth+'px');
+      const applied=Math.max(min,Math.min(max,manualWidth));
+      sidebar.style.setProperty('--sidebar-width',applied+'px');
     }
     handle.setAttribute('aria-valuemin',String(min));
     handle.setAttribute('aria-valuemax',String(max));

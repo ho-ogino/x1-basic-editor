@@ -48,7 +48,8 @@ test('sidebar keys and Home preserve tab defaults, manual width and container bo
     ui.key('ArrowRight');assert.equal(width(),'340px');
     ui.resize(400);assert.equal(width(),'234px');assert.equal(ui.handle.getAttribute('aria-valuemax'),'234');
     ui.resize(300);assert.equal(width(),'134px');assert.equal(ui.handle.getAttribute('aria-valuemin'),'134');
-    ui.resize(1000);ui.key('Home');assert.equal(width(),'');assert.equal(ui.handle.getAttribute('aria-valuenow'),'268');
+    ui.resize(1000);assert.equal(width(),'340px','restores the preferred width after temporary clamping');
+    ui.key('Home');assert.equal(width(),'');assert.equal(ui.handle.getAttribute('aria-valuenow'),'268');
     ui.default(235);assert.equal(ui.handle.getAttribute('aria-valuenow'),'235');
     ui.key('ArrowRight');assert.equal(width(),'225px');
   }finally{ui.dom.window.close();}
