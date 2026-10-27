@@ -4,7 +4,7 @@ SHARP X1 のアスキーセーブ BASIC を、X1 のドット字形で編集す�
 
 ## 起動
 
-Windows のビルド済みポータブル版は [GitHub Releases](https://github.com/ho-ogino/x1-basic-editor/releases/latest) から取得できます。インストールは不要です。手元でビルドした場合は `dist/X1 BASIC Editor 0.1.9.exe` に出力します。
+Windows のビルド済みポータブル版は [GitHub Releases](https://github.com/ho-ogino/x1-basic-editor/releases/latest) から取得できます。インストールは不要です。手元でビルドした場合は `dist/X1 BASIC Editor 0.1.10.exe` に出力します。
 
 ソースから起動する場合は Node.js 24 LTS 以降と npm を使用してください。
 
@@ -140,7 +140,7 @@ Developer ID署名・公証・ストア公開は設定していません。macOS
 
 Actions画面の「Build distributions」→「Run workflow」で実行すると、各OSのテストとビルドを行い、配布ファイルだけをArtifactとして7日間保存します。手動実行ではReleaseを作成しません。
 
-`package.json` のバージョンと一致する `v0.1.9` などのタグをpushした場合は、3種類すべてのビルド成功後、配布ファイルと `SHA256SUMS` を添付した**下書きRelease**を作ります。自動公開はしないため、内容を確認してからGitHub上で公開してください。バージョン不一致や成果物の不足があれば作成を停止します。
+`package.json` のバージョンと一致する `v0.1.10` などのタグをpushした場合は、3種類すべてのビルド成功後、配布ファイルと `SHA256SUMS` を添付した**下書きRelease**を作ります。自動公開はしないため、内容を確認してからGitHub上で公開してください。バージョン不一致や成果物の不足があれば作成を停止します。
 
 macOS版はアドホック署名を付けますが、AppleのDeveloper ID署名・公証は行いません。初回起動でmacOS側の許可操作が必要になる場合があります。Developer ID署名・公証を追加する際は、別途証明書と認証設定が必要です。
 

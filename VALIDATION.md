@@ -2,7 +2,7 @@
 
 ## 自動テスト
 
-X1 BASIC Editor 0.1.9 / Windows x64 / Node.js 24 で検証。`npm test` の73件が成功。
+X1 BASIC Editor 0.1.10 / Windows x64 / Node.js 24 で検証。`npm test` の73件が成功。
 
 - 同梱する `test/fixtures/editor-sample.bas`（5371 bytes・77 CRLF）の読み込みと保存時のバイト保持。
 - 全256コード、NUL、EOF、末尾改行、CRLF / LF / CRの混在と編集範囲外の保持。
