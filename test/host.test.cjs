@@ -2,8 +2,12 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../src/host.js'),'utf8');
 test('host selection supports Electron and injected browser hosts with custom precedence',()=>{
-  for(const window of [{desktop:{}},{X1Host:{}},{desktop:{},X1Host:{}}]){
-    const expected=window.X1Host??window.desktop;vm.runInNewContext(source,{window});assert.equal(window.X1Host,expected);
+  for(const window of [{desktop:{}},{X1Host:{}},{desktop:{},X1Host:{}},{desktop:{},X1Host:null}]){
+    const expected=window.X1Host??window.desktop,injected=window.X1Host!=null;
+    const buttons=[{hidden:false},{hidden:false}];
+    const document={querySelectorAll:()=>buttons};
+    vm.runInNewContext(source,{window,document});assert.equal(window.X1Host,expected);
+    assert.ok(buttons.every(button=>button.hidden===injected));
   }
   assert.throws(()=>vm.runInNewContext(source,{window:{}}),/requires a host/);
 });

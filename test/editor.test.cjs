@@ -8,6 +8,8 @@ const fixture=fs.readFileSync(path.join(__dirname,'fixtures/editor-sample.bas'))
 function setup(bytes=fixture,options={}){
   const dom=new JSDOM(fs.readFileSync(path.join(base,'index.html'),'utf8'),{runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window;let onLoad,onCommand,saved,latestState;
+  if(options.styles){const style=w.document.createElement('style');style.textContent=fs.readFileSync(path.join(base,'style.css'),'utf8');w.document.head.append(style);}
+  if(options.resizeObserver)w.ResizeObserver=class{constructor(){}observe(){}};
   w.desktop={state(value){latestState=value;},onLoaded(fn){onLoad=fn;},onCommand(fn){onCommand=fn;},
     async save(payload){saved=Uint8Array.from(payload.bytes);return {name:'test.bas',bytes:payload.bytes};},
     async confirmDirty(){return 'cancel';},async open(){return null;},newDocument(){},close(){},
@@ -490,4 +492,62 @@ test('throwing and rejecting content callbacks cannot prevent rendering, subsequ
       assert.deepEqual(await ui.save(),Buffer.from('B'));assert.equal(ui.dirty,false);
     }finally{ui.dom.window.close();}
   }
+});
+
+test('import/export presentation hides New and Save As only for preconfigured hosts',async()=>{
+  for(const hostOnly of [false,true]){
+    const calls=[],original=Buffer.from([65,13,10,0x87]);
+    const ui=setup(original,{hostOnly,styles:true,desktop:{
+      async open(){calls.push('open');return {bytes:[66]};},
+      async save(payload){calls.push({bytes:payload.bytes,saveAs:payload.saveAs});return true;}
+    }});
+    try{
+      const button=name=>ui.w.document.querySelector(`[data-command="${name}"]`);
+      for(const name of ['new','save-as']){
+        assert.equal(button(name).hidden,hostOnly);
+        assert.equal(ui.w.getComputedStyle(button(name)).display==='none',hostOnly);
+      }
+      assert.equal(button('open').textContent,'インポート…');assert.equal(button('save').textContent,'エクスポート');
+      assert.notEqual(ui.w.getComputedStyle(button('open')).display,'none');assert.notEqual(ui.w.getComputedStyle(ui.$('sidebar-toggle')).display,'none');
+      button('save').click();await settle();assert.deepEqual(Array.from(calls[0].bytes),Array.from(original));assert.equal(calls[0].saveAs,false);
+      button('open').click();await settle();assert.equal(calls[1],'open');assert.equal(ui.editor.value,'B');
+      if(!hostOnly){button('save-as').click();await settle();assert.equal(calls.at(-1).saveAs,true);button('new').click();await settle();assert.equal(ui.editor.value,'');}
+      else {await ui.command('save-as');assert.equal(calls.at(-1).saveAs,true);await ui.command('new');assert.equal(ui.editor.value,'');}
+    }finally{ui.dom.window.close();}
+  }
+});
+
+test('sidebar collapse reflows wrapped rows directly with and without ResizeObserver without editing',async()=>{
+  for(const resizeObserver of [false,true]){
+    const changes=[],original=Buffer.from('ABCDEFGHIJKL\r\nB'),ui=setup(original,{styles:true,resizeObserver,desktop:{contentChanged:p=>changes.push(p)}});
+    try{
+      ui.editor.style.fontSize='24px';ui.editor.style.lineHeight='30px';
+      Object.defineProperty(ui.editor,'clientWidth',{get:()=>ui.$('sidebar').hidden?324:132});
+      ui.$('word-wrap').dispatchEvent(new ui.w.Event('change'));assert.equal(ui.$('line-numbers').textContent,'1\n↪\n↪\n2');
+      ui.editor.setSelectionRange(2,5);const before=changes.length;ui.$('sidebar-toggle').click();
+      assert.equal(ui.$('sidebar').hidden,true);assert.equal(ui.$('sidebar-resizer').hidden,true);
+      assert.equal(ui.$('mirror').style.width,'324px');assert.equal(ui.$('line-numbers').textContent,'1\n2');
+      ui.$('sidebar-toggle').click();assert.equal(ui.$('mirror').style.width,'132px');assert.equal(ui.$('line-numbers').textContent,'1\n↪\n↪\n2');
+      assert.equal(ui.editor.selectionStart,2);assert.equal(ui.editor.selectionEnd,5);assert.equal(ui.dirty,false);assert.equal(changes.length,before);
+      ui.type('Z');await ui.command('undo');assert.deepEqual(await ui.save(),original);
+      ui.editor.setSelectionRange(0,1);ui.type('Z');const editedChanges=changes.length;
+      ui.$('sidebar-toggle').click();ui.$('sidebar-toggle').click();
+      assert.equal(ui.dirty,true);assert.equal(changes.length,editedChanges);
+      await ui.command('undo');assert.deepEqual(await ui.save(),original);
+    }finally{ui.dom.window.close();}
+  }
+});
+
+test('PCG tab, definitions and display settings survive collapsing without content notifications',async()=>{
+  const original=Buffer.from('10 DEFCHR$(65)=STRING$(24,255)\r\n'),changes=[];
+  const ui=setup(original,{desktop:{contentChanged:p=>changes.push(p)}});
+  try{
+    ui.editor.select();await ui.command('pcg-setup');const before=changes.length;
+    const font=ui.w.document.documentElement.style.getPropertyValue('--x1-font');
+    ui.$('sidebar-toggle').click();assert.equal(ui.$('sidebar').hidden,true);
+    await ui.command('pcg-setup');assert.equal(ui.$('sidebar').hidden,true);assert.equal(ui.$('pcg-panel').hidden,false);
+    ui.$('sidebar-toggle').click();assert.equal(ui.$('sidebar').hidden,false);assert.equal(ui.$('pcg-enabled').checked,true);
+    assert.equal(ui.$('pcg-count').textContent,'1 / 256 文字を定義');assert.equal(ui.$('pcg-strings-only').checked,true);
+    assert.equal(ui.faces.size,1);assert.ok(font);assert.equal(ui.dirty,false);assert.equal(changes.length,before);assert.deepEqual(await ui.save(),original);
+  }finally{ui.dom.window.close();}
 });
