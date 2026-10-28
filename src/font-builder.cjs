@@ -3,6 +3,7 @@
 const builder=require('./font-builder.js');
 module.exports={
   parseFontRom:builder.parseFontRom,
+  readFontBitmap:builder.readFontBitmap,
   buildFont:(...args)=>Buffer.from(builder.buildFont(...args)),
   buildFontFromRom:(...args)=>Buffer.from(builder.buildFontFromRom(...args))
 };
