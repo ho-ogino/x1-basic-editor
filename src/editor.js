@@ -29,7 +29,7 @@
   async function prepareFont(info,withBitmap=true) {
     if (!info.data) return null;
     const face = new FontFace('X1Custom' + (++fontSequence),Uint8Array.from(info.data));
-    if(withBitmap)face.x1Bitmap=X1FontBuilder.readFontBitmap(Uint8Array.from(info.data));
+    if(withBitmap)face.x1Bitmap=window.X1FontBuilder?.readFontBitmap?.(Uint8Array.from(info.data))??null;
     await face.load();
     return face;
   }
@@ -522,7 +522,7 @@
     editor,panel:$('pcg-string-preview'),canvas:$('pcg-string-image'),summary:$('pcg-string-size'),warning:$('pcg-string-warning'),
     getLines:()=>renderedLines,getBytes:()=>doc.bytes,
     isEnabled:()=>!busy&&!composing,
-    getState:()=>({entries:$('pcg-enabled').checked?pcgEntries:[],order:$('pcg-order').value,layout:$('pcg-layout').value,bitmap:activeFontFace?activeFontFace.x1Bitmap:X1FontBitmap})
+    getState:()=>({entries:$('pcg-enabled').checked?pcgEntries:[],order:$('pcg-order').value,layout:$('pcg-layout').value,bitmap:activeFontFace?activeFontFace.x1Bitmap:window.X1FontBitmap??null})
   });
   host?.onCommand(command); host?.onLoaded(load);
   setScale(); setWrap(); palette(); preview(hoverCode); renderPcgGrid(); render(0); displayFont();restoreFont();

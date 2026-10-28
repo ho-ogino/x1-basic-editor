@@ -32,8 +32,8 @@ function setup(bytes=fixture,options={}){
   w.eval(fs.readFileSync(path.join(base,'syntax.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'pcg.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'pcg-preview.js'),'utf8'));
-  w.eval(fs.readFileSync(path.join(base,'font-builder.js'),'utf8'));
-  w.eval(fs.readFileSync(path.join(base,'font-bitmap.js'),'utf8'));
+  if(!options.omitFontBuilder)w.eval(fs.readFileSync(path.join(base,'font-builder.js'),'utf8'));
+  if(!options.omitBitmapScript)w.eval(fs.readFileSync(path.join(base,'font-bitmap.js'),'utf8'));
   let previewOptions;const attach=w.X1PcgPreview.attach;
   w.X1PcgPreview.attach=options=>{previewOptions=options;return attach(options);};
   w.eval(fs.readFileSync(path.join(base,'host.js'),'utf8'));
@@ -650,5 +650,18 @@ test('restored base font bitmap matches stored ROM; unsupported host outlines ne
     assert.deepEqual(JSON.parse(JSON.stringify(ui.previewState.bitmap)),builder.parseFontRom(rom));
     await ui.command('font-load');assert.equal(ui.previewState.bitmap,null);
     assert.equal(ui.$('font-name').textContent,'other.ttf');assert.deepEqual(await ui.save(),fixture);
+  }finally{ui.dom.window.close();}
+});
+
+test('older embed script lists can still load fonts and edit when bitmap helpers are absent',async()=>{
+  const data=Array.from(require('../src/font-builder.cjs').buildFontFromRom(Buffer.alloc(2048)));
+  const ui=setup(fixture,{omitFontBuilder:true,omitBitmapScript:true,desktop:{
+    async currentFont(){return {name:'stored.X1',data};},async chooseFont(){return {name:'chosen.X1',data,token:'candidate'};},async commitFont(){return true;},async resetFont(){return true;}
+  }});try{
+    assert.equal(ui.previewState.bitmap,null);
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(ui.$('font-name').textContent,'stored.X1');assert.equal(ui.previewState.bitmap,null);
+    await ui.command('font-load');assert.equal(ui.$('font-name').textContent,'chosen.X1');assert.equal(ui.previewState.bitmap,null);
+    await ui.command('font-reset');assert.equal(ui.$('font-name').textContent,'内蔵フォント');assert.equal(ui.previewState.bitmap,null);
+    ui.editor.setSelectionRange(0,1);ui.type('2');await ui.command('undo');assert.deepEqual(await ui.save(),fixture);
   }finally{ui.dom.window.close();}
 });
