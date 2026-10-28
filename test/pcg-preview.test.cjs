@@ -52,18 +52,18 @@ function setup(options={}){
   const dom=new JSDOM('<textarea id="editor">unchanged</textarea><div id="panel" hidden><canvas></canvas><div id="size"></div><div id="warning"></div></div>',{runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window,editor=w.document.getElementById('editor'),panel=w.document.getElementById('panel'),canvas=panel.querySelector('canvas');
   const style=w.document.createElement('style');style.textContent=fs.readFileSync(path.join(__dirname,'../src/style.css'),'utf8');w.document.head.append(style);
-  const calls=[],ctx={fillRect(...args){calls.push({args,color:this.fillStyle});},fillText(...args){calls.push({text:args,color:this.fillStyle,font:this.font});}};
+  const calls=[],ctx={fillRect(...args){calls.push({args,color:this.fillStyle});},fillText(){throw Error('Font rasterization forbidden');}};
   canvas.getContext=()=>options.noContext?null:ctx;
   const boxes=[rect(10,10,90,30),rect(100,10,180,30)];
   const length=options.bytes?.length||example.length;
   const literals=boxes.map((box,index)=>({element:{getClientRects:()=>[box]},byteStart:index*length,byteEnd:(index+1)*length}));
   const lines=[{element:{getBoundingClientRect:()=>rect(0,0,200,40)},literals}];
   editor.getBoundingClientRect=()=>rect(0,0,200,100);panel.getBoundingClientRect=()=>rect(0,0,200,100);
-  Object.defineProperty(w.document,'fonts',{value:options.fonts||{ready:Promise.resolve()}});
+  Object.defineProperty(w.document,'fonts',{value:{load(){throw Error('Font loading forbidden in bitmap preview');},get ready(){throw Error('Font waiting forbidden');}}});
   let enabled=true,time=0,next=0;const timers=new Map();
   w.setTimeout=(callback,delay)=>{const id=++next;timers.set(id,{callback,due:time+delay});return id;};
   w.clearTimeout=id=>timers.delete(id);
-  const state={entries:new Map(Array.from({length:6},(_,i)=>[128+i,blue])),order:'BRG',layout:'planar',font:'X1'};
+  const state={entries:new Map(Array.from({length:6},(_,i)=>[128+i,blue])),order:'BRG',layout:'planar',bitmap:require('../assets/x1-font.json')};
   const bytes=options.bytes?Uint8Array.from(options.bytes):new Uint8Array(example.length*2);if(!options.bytes){bytes.set(example);bytes.set(example,example.length);}
   const control=preview.attach({editor,panel,canvas,summary:w.document.getElementById('size'),warning:w.document.getElementById('warning'),
     isEnabled:()=>enabled,getLines:()=>lines,getBytes:()=>bytes,getState:()=>state});
@@ -81,7 +81,7 @@ test('hover waits 600ms, keeps the same target stable, restarts for another lite
     ui.editor.dispatchEvent(new ui.w.Event('mouseleave'));assert.equal(ui.panel.hidden,true);assert.equal(ui.editor.hasAttribute('aria-describedby'),false);
   }finally{ui.close();}
 });
-test('every interaction invalidates pending and visible previews, including font-ready results',async()=>{
+test('every interaction invalidates pending and visible bitmap previews without waiting for fonts',async()=>{
   for(const event of ['mouseleave','mousedown','scroll','input','compositionstart','blur']){
     const ui=setup();try{
       ui.move();ui.editor.dispatchEvent(new ui.w.Event(event));await ui.tick(600);assert.equal(ui.panel.hidden,true,event);
@@ -91,15 +91,13 @@ test('every interaction invalidates pending and visible previews, including font
   for(const [target,event] of [['document','keydown'],['document','pointerdown'],['document','visibilitychange'],['window','resize'],['window','blur']]){
     const ui=setup();try{ui.move();await ui.tick(600);assert.equal(ui.panel.hidden,false);(target==='document'?ui.w.document:ui.w).dispatchEvent(new ui.w.Event(event));assert.equal(ui.panel.hidden,true,event);}finally{ui.close();}
   }
-  let resolve;const ui=setup({fonts:{load:()=>new Promise(done=>{resolve=done;})}});try{
-    ui.move();await ui.tick(600);ui.control.hide();resolve();await ui.tick(0);assert.equal(ui.panel.hidden,true);
-  }finally{ui.close();}
 });
-test('disabled interaction, canvas failure and font failure do not show or disrupt editing',async()=>{
-  for(const mode of ['disabled','no-context','font-failed']){
-    const ui=setup({noContext:mode==='no-context',fonts:mode==='font-failed'?{load:()=>Promise.reject(Error('bad font'))}:undefined});
+test('disabled interaction, canvas failure and unavailable ordinary bitmap do not disrupt editing',async()=>{
+  for(const mode of ['disabled','no-context','bitmap-missing']){
+    const ui=setup({bytes:[65],noContext:mode==='no-context'});
     try{
       if(mode==='disabled')ui.setEnabled(false);
+      if(mode==='bitmap-missing')ui.state.bitmap=null;
       ui.move();await ui.tick(600);assert.equal(ui.panel.hidden,true);assert.equal(ui.editor.value,'unchanged');
     }finally{ui.close();}
   }
@@ -108,8 +106,11 @@ test('ordinary strings without PCG definitions use the same layout with white ba
   const ui=setup({bytes:[65,66,67,31,29,29,29,68,69,70]});try{
     ui.state.entries.clear();ui.move();await ui.tick(600);
     assert.equal(ui.panel.hidden,false);assert.equal(ui.canvas.width,24);assert.equal(ui.canvas.height,16);
-    assert.deepEqual(ui.calls.filter(call=>call.text).map(call=>call.text[0]),['A','B','C','D','E','F']);
-    assert.ok(ui.calls.filter(call=>call.text).every(call=>call.color==='#FFFFFF'));
+    const expected=[];
+    for(const cell of preview.compose([65,66,67,31,29,29,29,68,69,70]).cells){
+      ui.state.bitmap[cell.code].forEach((bits,y)=>{for(let x=0;x<8;x++)if(bits&(128>>x))expected.push([cell.x*8+x,cell.y*8+y,1,1]);});
+    }
+    assert.deepEqual(ui.calls.filter(call=>call.color==='#FFFFFF').map(call=>call.args),expected);
   }finally{ui.close();}
 });
 test('canvas painter delegates every color order and layout',async()=>{
@@ -122,16 +123,27 @@ test('canvas painter delegates every color order and layout',async()=>{
     }finally{ui.close();}
   }
 });
-test('warnings describe ignored controls and truncated output; fallback text uses the current base font in white',async()=>{
+test('warnings describe ignored controls and truncation; ordinary glyphs use the supplied source bitmap',async()=>{
   for(const [bytes,expected] of [[[128,7,27],/\$07.*\$1B/],[[128,...Array(64).fill(65)],/上限/]]){
     const ui=setup({bytes});try{
       ui.move();await ui.tick(600);assert.equal(ui.panel.hidden,false);assert.match(ui.w.document.getElementById('warning').textContent,expected);
     }finally{ui.close();}
   }
-  let loaded;
-  const ui=setup({bytes:[128,65],fonts:{load:async font=>{loaded=font;}}});try{
-    ui.state.font='X1CustomTest';ui.move();await ui.tick(600);
-    assert.equal(loaded,'8px X1CustomTest');assert.equal(ui.canvas.width,16);
-    const text=ui.calls.find(call=>call.text);assert.deepEqual(text,{text:['A',8,8],color:'#FFFFFF',font:'8px X1CustomTest'});
+  const ui=setup({bytes:[128,65]});try{
+    ui.state.bitmap=Array.from({length:256},()=>Array(8).fill(0));ui.state.bitmap[65]=[128,0,0,0,0,0,0,1];
+    ui.move();await ui.tick(600);assert.equal(ui.canvas.width,16);
+    assert.deepEqual(ui.calls.filter(call=>call.color==='#FFFFFF').map(call=>call.args),[[8,0,1,1],[15,7,1,1]]);
   }finally{ui.close();}
+});
+test('normal bitmap blank/full cells and defined PCG precedence preserve exact integer dots',async()=>{
+  const ui=setup({bytes:[65,66,128]});try{
+    ui.state.bitmap=Array.from({length:256},()=>Array(8).fill(0));ui.state.bitmap[66].fill(255);ui.state.bitmap[128].fill(255);
+    ui.move();await ui.tick(600);assert.equal(ui.panel.hidden,false);
+    const white=ui.calls.filter(call=>call.color==='#FFFFFF');assert.equal(white.length,64);
+    assert.ok(white.every(call=>call.args[0]>=8&&call.args[0]<16&&call.args.slice(2).join(',')==='1,1'));
+    const blues=ui.calls.filter(call=>call.color==='#0000ff');assert.equal(blues.length,64);assert.ok(blues.every(call=>call.args[0]>=16));
+  }finally{ui.close();}
+  const pcg=setup();try{
+    pcg.state.bitmap=null;pcg.move();await pcg.tick(600);assert.equal(pcg.panel.hidden,false,'PCG-only does not require a base font');
+  }finally{pcg.close();}
 });

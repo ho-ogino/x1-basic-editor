@@ -114,6 +114,7 @@ BASICを実行する機能ではありません。変数や計算式による定
 - その他の制御コード（`$00`〜`$1B`）は実行せず、幅0で省略して警告します。色属性・消去・Home・ESCの命令解釈は行いません。ESCに続くバイトも通常の規則で扱います。
 - 4096バイト、描画範囲64×64文字（512×512ドット）までです。上限に達したらそこまでの画像と「以降は省略」の表示を出します。
 - PCG ON時は現在の登録内容・色順・配列を使い、OFF時や未定義の文字は選択中の基本フォントで描きます。「PCG表示は文字列のみ」がOFFでも使えます。カラーコード7（白）を前提に通常字形は白、PCGは定義どおりの色、背景は黒で表示します。表示倍率は画面に収まるよう調整し、寸法は元のドット数を表示します。
+- 通常文字もエディタのフォントと同じ元の8×8ビットマップを使い、PCGと同じくドットを直接描きます。OSの文字描画やアンチエイリアスを経由しません。
 - マウスが外れる、クリック・キー入力・編集をする、スクロール・表示サイズ・PCGやフォント設定を変えると消えます。ソース・選択位置・Undo・保存状態は変えません。
 
 引用符が閉じていない文字列、コメント、変数・`CHR$`・文字列連結などの式全体は対象外です。現在手動で登録した字形から単独の文字列を確認する機能で、BASICの実行結果全体を再現するものではありません。
@@ -186,7 +187,7 @@ macOS版はアドホック署名を付けますが、AppleのDeveloper ID署名�
 `host.js`より前に`window.X1Host`を設定した場合は、「新規」と「別名で保存」のボタンを隠します。Electronの`window.desktop`へフォールバックする単独アプリでは表示します。インポート・エクスポートと右欄の表示切り替えは両環境で使えます。表示名が変わっても、ホストの`open()`・`save()`や`onCommand`の`'open'`・`'save'`など既存の名前・引数は変わりません。隠した操作のコマンドも、互換性のため引き続き呼び出せます。
 
 ```html
-<!-- codec.js / keywords.js / syntax.js / pcg.js / font-builder.js の後 -->
+<!-- codec.js / keywords.js / syntax.js / pcg.js / pcg-preview.js / font-builder.js / font-bitmap.js の後 -->
 <script src="x1pen-host.js"></script>
 <script src="host.js"></script>
 <script src="sidebar-resize.js"></script>
@@ -209,6 +210,8 @@ macOS版はアドホック署名を付けますが、AppleのDeveloper ID署名�
 | `contentChanged({bytes, dirty})` | 任意。初期表示と、実際のバイト列が変わったときの通知。`bytes`は独立したUint8Arrayのコピー。 |
 
 フォント操作を提供する場合は上表のフォント用メソッドを実装してください。PCG生成にはブラウザの`X1FontBuilder`を使えます。`parseFontRom(bytes)`は2048バイトのUint8Arrayから256×8の配列を作り、`buildFont(bitmap, entries = [], order = 'BRG', layout = 'planar')`と`buildFontFromRom(bytes)`はTTFのUint8Arrayを返します。`bitmap`には同梱の`assets/x1-font.json`相当の配列、または読み込んだ独自フォントの配列を渡します。PCGには先に`pcg.js`を読み込んでください。別のwindow由来のROMは、そのiframe内の`Uint8Array.from(bytes)`で渡します。Node側の`require('./src/font-builder.cjs')`は従来どおりBufferを返します。
+
+通常文字の合成プレビューは内蔵ビットマップを直接使い、独自フォントでは`readFontBitmap(bytes)`で本ビルダーのTTFから元のドットを復元します（非対応形式は`null`）。既存の`currentFont()` / `chooseFont()`の戻り値は変更不要です。本ビルダー以外の形式のTTFでは、通常文字を含む合成プレビューは表示せず、編集欄のフォント表示は維持します。`src/font-bitmap.js`は内蔵TTF・JSONと同じ元データから`npm run build:font`で生成します。
 
 `contentChanged`は入力・貼り付け・切り取り・挿入・置換・Undo/Redo・新規作成・読み込みによる変更を通知します。同一バイトへの置換、同一内容の再読み込み、保存だけの操作、カーソル移動や表示設定は通知しません。未保存状態だけの変化は`state`で受け取ってください。コールバックの例外は編集欄に通知し、編集と保存は続行できます。
 

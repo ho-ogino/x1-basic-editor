@@ -110,3 +110,48 @@ test('browser font builder runs without Node and matches deterministic CJS bytes
     assert.equal(sum,0xb1b0afba);
   }
 });
+
+test('runtime bitmap and builtin TTF derive from exactly the same original font rows',()=>{
+  const vm=require('node:vm'),context=vm.createContext({});
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/font-bitmap.js'),'utf8'),context);
+  const runtime=JSON.parse(JSON.stringify(context.X1FontBitmap)),bitmap=require('../assets/x1-font.json');
+  assert.deepEqual(runtime,bitmap);
+  const font=fs.readFileSync(path.join(__dirname,'../assets/x1-basic.ttf'));
+  assert.deepEqual(buildFont(runtime),font);
+  assert.deepEqual(require('../src/font-builder.cjs').readFontBitmap(font),runtime);
+});
+test('source bitmap recovery roundtrips all 256 codes and patterned custom ROMs without rasterization',()=>{
+  const builder=require('../src/font-builder.cjs'),vm=require('node:vm'),context=vm.createContext({});
+  for(const file of ['pcg.js','font-builder.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),context);
+  for(const rom of [Buffer.alloc(2048),Buffer.alloc(2048,255),Buffer.from(Array.from({length:2048},(_,i)=>(i*73^(i>>3))&255))]){
+    const expected=parseFontRom(rom),font=buildFontFromRom(rom);
+    assert.deepEqual(builder.readFontBitmap(font),expected);
+    context.data=Array.from(font);
+    assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('X1FontBuilder.readFontBitmap(Uint8Array.from(data))',context))),expected);
+  }
+});
+test('source bitmap recovery rejects malformed tables, mappings, contours and non-dot outlines',()=>{
+  const read=require('../src/font-builder.cjs').readFontBitmap;
+  const bitmap=parseFontRom(Buffer.alloc(2048));bitmap[0]=[0xc0,0,0,0,0,0,0,0];
+  const original=buildFont(bitmap);
+  const table=name=>{
+    for(let i=0;i<original.readUInt16BE(4);i++){const at=12+i*16;if(original.toString('ascii',at,at+4)===name)return {at,start:original.readUInt32BE(at+8)};}
+  };
+  const glyph=table('glyf').start+original.readUInt32BE(table('loca').start+4);
+  const corrupt=fn=>{const bytes=Buffer.from(original);fn(bytes);assert.equal(read(bytes),null);};
+  for(const size of [0,11,original.length-1])assert.equal(read(original.subarray(0,size)),null);
+  assert.equal(read(Array.from(original)),null);
+  corrupt(b=>b.writeUInt16BE(65535,4));
+  corrupt(b=>b.writeUInt32BE(0xffffffff,table('glyf').at+8));
+  corrupt(b=>b.writeUInt16BE(512,table('head').start+18));
+  corrupt(b=>b.writeInt16BE(0,table('head').start+50));
+  corrupt(b=>b.writeUInt32BE(0xffffffff,table('loca').start+8));
+  corrupt(b=>b.writeUInt16BE(12,table('cmap').start+12));
+  corrupt(b=>b.writeUInt16BE(1,table('cmap').start+12+16+3*6)); // unsupported idRangeOffset
+  corrupt(b=>b.writeInt16BE(-1,glyph)); // composite
+  corrupt(b=>b.writeInt16BE(65,glyph)); // excessive contours
+  corrupt(b=>b.writeUInt16BE(1,glyph+14)); // instructions
+  corrupt(b=>b.writeUInt8(9,glyph+16)); // compressed point flags
+  corrupt(b=>b.writeInt16BE(1,glyph+24)); // off-grid left x
+  corrupt(b=>b.writeInt16BE(-128,glyph+32)); // second rectangle duplicates first dot
+});

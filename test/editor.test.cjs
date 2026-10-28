@@ -32,7 +32,10 @@ function setup(bytes=fixture,options={}){
   w.eval(fs.readFileSync(path.join(base,'syntax.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'pcg.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'pcg-preview.js'),'utf8'));
-  w.eval(fs.readFileSync(path.join(base,'font-builder.js'),'utf8'));
+  if(!options.omitFontBuilder)w.eval(fs.readFileSync(path.join(base,'font-builder.js'),'utf8'));
+  if(!options.omitBitmapScript)w.eval(fs.readFileSync(path.join(base,'font-bitmap.js'),'utf8'));
+  let previewOptions;const attach=w.X1PcgPreview.attach;
+  w.X1PcgPreview.attach=options=>{previewOptions=options;return attach(options);};
   w.eval(fs.readFileSync(path.join(base,'host.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'sidebar-resize.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(base,'editor.js'),'utf8'));
@@ -44,7 +47,7 @@ function setup(bytes=fixture,options={}){
     editor.dispatchEvent(new w.InputEvent('input',{inputType:'insertText',bubbles:true}));
   }
   const save=async()=>{await onCommand('save');return Buffer.from(saved);};
-  return {dom,w,$,editor,type,save,faces,highlights,command:onCommand,load:onLoad,get dirty(){return latestState?.dirty;}};
+  return {dom,w,$,editor,type,save,faces,highlights,command:onCommand,load:onLoad,get previewState(){return previewOptions.getState();},get dirty(){return latestState?.dirty;}};
 }
 test('renderer shows readable ASCII, X1 symbols, line count and exact unchanged save',async()=>{
   const ui=setup();try{
@@ -561,7 +564,7 @@ const hoverFixture=Buffer.concat([
 async function hoverSetup(bytes=hoverFixture,register=true){
   const events=[],ui=setup(bytes,{styles:true,desktop:{contentChanged:p=>events.push(p)}});
   if(register){ui.editor.select();await ui.command('pcg-setup');}await settle();
-  const drawn=[],ctx={fillRect(){},fillText(text){drawn.push({text,color:this.fillStyle});}};ui.$('pcg-string-image').getContext=()=>ctx;
+  const drawn=[],ctx={fillRect(...args){drawn.push({args,color:this.fillStyle});},fillText(){throw Error('Font rasterization forbidden');}};ui.$('pcg-string-image').getContext=()=>ctx;
   const lines=[...ui.$('mirror').querySelectorAll('.source-line')],literals=[...ui.$('mirror').querySelectorAll('.pcg-literal')];
   const rect=(left,top,right,bottom)=>({left,top,right,bottom,width:right-left,height:bottom-top});
   lines.forEach((line,index)=>{line.getBoundingClientRect=()=>rect(0,index*20,500,index*20+20);});
@@ -615,7 +618,50 @@ test('renderer previews ordinary-only strings without PCG registration or PCG ON
     assert.equal(ui.$('pcg-enabled').checked,false);assert.equal(ui.$('pcg-count').textContent,'0 / 256 文字を定義');
     ui.hover();await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,false);
     assert.equal(ui.$('pcg-string-image').width,24);assert.equal(ui.$('pcg-string-image').height,16);
-    assert.deepEqual(ui.drawn.map(item=>item.text),['A','B','C','D','E','F']);assert.ok(ui.drawn.every(item=>item.color==='#FFFFFF'));
+    const expected=[],bitmap=require('../assets/x1-font.json');
+    for(let cell=0;cell<6;cell++)bitmap[65+cell].forEach((bits,y)=>{for(let x=0;x<8;x++)if(bits&(128>>x))expected.push([(cell%3)*8+x,Math.floor(cell/3)*8+y,1,1]);});
+    assert.deepEqual(ui.drawn.filter(item=>item.color==='#FFFFFF').map(item=>item.args),expected);
     assert.deepEqual(await ui.save(),bytes);
+  }finally{ui.dom.window.close();}
+});
+
+test('preview shares the exact builtin/custom ROM source across activation, PCG changes and reset',async()=>{
+  const rom=Buffer.from(Array.from({length:2048},(_,i)=>(i*51^(i>>3))&255)),builder=require('../src/font-builder.cjs');
+  const expected=builder.parseFontRom(rom),data=Array.from(builder.buildFontFromRom(rom));let commit=true;
+  const ui=setup(Buffer.from('10 DEFCHR$(65)=STRING$(24,255)\r\n20 PRINT "ABC"'),{desktop:{
+    async chooseFont(){return {name:'custom.X1',data,token:'source'};},async commitFont(){return commit;},async resetFont(){return true;},
+    async pcgFont(p){return Array.from(builder.buildFont(expected,p.entries,p.order,p.layout));}
+  }});const bitmap=()=>JSON.parse(JSON.stringify(ui.previewState.bitmap));
+  try{
+    assert.deepEqual(bitmap(),require('../assets/x1-font.json'));
+    commit=false;await ui.command('font-load');assert.deepEqual(bitmap(),require('../assets/x1-font.json'));
+    commit=true;await ui.command('font-load');assert.deepEqual(bitmap(),expected);
+    ui.editor.select();await ui.command('pcg-setup');assert.deepEqual(bitmap(),expected);
+    ui.$('pcg-enabled').checked=false;ui.$('pcg-enabled').dispatchEvent(new ui.w.Event('change'));assert.deepEqual(bitmap(),expected);
+    await ui.command('font-reset');assert.deepEqual(bitmap(),require('../assets/x1-font.json'));
+    assert.equal(ui.dirty,false);assert.deepEqual(await ui.save(),Buffer.from('10 DEFCHR$(65)=STRING$(24,255)\r\n20 PRINT "ABC"'));
+  }finally{ui.dom.window.close();}
+});
+test('restored base font bitmap matches stored ROM; unsupported host outlines never substitute builtin dots',async()=>{
+  const builder=require('../src/font-builder.cjs'),rom=Buffer.alloc(2048,0x55),data=Array.from(builder.buildFontFromRom(rom));
+  const ui=setup(fixture,{desktop:{async currentFont(){return {name:'stored.X1',data};},async chooseFont(){return {name:'other.ttf',data:[1,2,3],token:'other'};},async commitFont(){return true;}}});
+  try{
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(JSON.parse(JSON.stringify(ui.previewState.bitmap)),builder.parseFontRom(rom));
+    await ui.command('font-load');assert.equal(ui.previewState.bitmap,null);
+    assert.equal(ui.$('font-name').textContent,'other.ttf');assert.deepEqual(await ui.save(),fixture);
+  }finally{ui.dom.window.close();}
+});
+
+test('older embed script lists can still load fonts and edit when bitmap helpers are absent',async()=>{
+  const data=Array.from(require('../src/font-builder.cjs').buildFontFromRom(Buffer.alloc(2048)));
+  const ui=setup(fixture,{omitFontBuilder:true,omitBitmapScript:true,desktop:{
+    async currentFont(){return {name:'stored.X1',data};},async chooseFont(){return {name:'chosen.X1',data,token:'candidate'};},async commitFont(){return true;},async resetFont(){return true;}
+  }});try{
+    assert.equal(ui.previewState.bitmap,null);
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(ui.$('font-name').textContent,'stored.X1');assert.equal(ui.previewState.bitmap,null);
+    await ui.command('font-load');assert.equal(ui.$('font-name').textContent,'chosen.X1');assert.equal(ui.previewState.bitmap,null);
+    await ui.command('font-reset');assert.equal(ui.$('font-name').textContent,'内蔵フォント');assert.equal(ui.previewState.bitmap,null);
+    ui.editor.setSelectionRange(0,1);ui.type('2');await ui.command('undo');assert.deepEqual(await ui.save(),fixture);
   }finally{ui.dom.window.close();}
 });
