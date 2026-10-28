@@ -65,7 +65,7 @@
       const target=locate(point);if(!target)return;
       const bytes=options.getBytes().subarray(target.byteStart,target.byteEnd),image=compose(bytes),state=options.getState();
       const entries=new Map(state.entries);
-      if(!image.cells.some(cell=>entries.has(cell.code)))return;
+      if(!image.cells.length)return;
       try{
         const ctx=canvas.getContext('2d');if(!ctx)return;
         const family=state.font||'X1';

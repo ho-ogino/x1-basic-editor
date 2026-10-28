@@ -95,14 +95,22 @@ test('every interaction invalidates pending and visible previews, including font
     ui.move();await ui.tick(600);ui.control.hide();resolve();await ui.tick(0);assert.equal(ui.panel.hidden,true);
   }finally{ui.close();}
 });
-test('disabled mode, missing PCG, canvas failure and font failure do not show or disrupt editing',async()=>{
-  for(const mode of ['disabled','no-pcg','no-context','font-failed']){
+test('disabled interaction, canvas failure and font failure do not show or disrupt editing',async()=>{
+  for(const mode of ['disabled','no-context','font-failed']){
     const ui=setup({noContext:mode==='no-context',fonts:mode==='font-failed'?{load:()=>Promise.reject(Error('bad font'))}:undefined});
     try{
-      if(mode==='disabled')ui.setEnabled(false);if(mode==='no-pcg')ui.state.entries.clear();
+      if(mode==='disabled')ui.setEnabled(false);
       ui.move();await ui.tick(600);assert.equal(ui.panel.hidden,true);assert.equal(ui.editor.value,'unchanged');
     }finally{ui.close();}
   }
+});
+test('ordinary strings without PCG definitions use the same layout with white base-font glyphs',async()=>{
+  const ui=setup({bytes:[65,66,67,31,29,29,29,68,69,70]});try{
+    ui.state.entries.clear();ui.move();await ui.tick(600);
+    assert.equal(ui.panel.hidden,false);assert.equal(ui.canvas.width,24);assert.equal(ui.canvas.height,16);
+    assert.deepEqual(ui.calls.filter(call=>call.text).map(call=>call.text[0]),['A','B','C','D','E','F']);
+    assert.ok(ui.calls.filter(call=>call.text).every(call=>call.color==='#FFFFFF'));
+  }finally{ui.close();}
 });
 test('canvas painter delegates every color order and layout',async()=>{
   const bit={B:1,R:2,G:4};

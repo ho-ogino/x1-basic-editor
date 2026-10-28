@@ -520,8 +520,8 @@
   hoverPreview=X1PcgPreview.attach({
     editor,panel:$('pcg-string-preview'),canvas:$('pcg-string-image'),summary:$('pcg-string-size'),warning:$('pcg-string-warning'),
     getLines:()=>renderedLines,getBytes:()=>doc.bytes,
-    isEnabled:()=>!busy&&!composing&&$('pcg-enabled').checked&&$('pcg-strings-only').checked&&pcgEntries.size>0,
-    getState:()=>({entries:pcgEntries,order:$('pcg-order').value,layout:$('pcg-layout').value,font:activeFontFace?.family||'X1'})
+    isEnabled:()=>!busy&&!composing,
+    getState:()=>({entries:$('pcg-enabled').checked?pcgEntries:[],order:$('pcg-order').value,layout:$('pcg-layout').value,font:activeFontFace?.family||'X1'})
   });
   host?.onCommand(command); host?.onLoaded(load);
   setScale(); setWrap(); palette(); preview(hoverCode); renderPcgGrid(); render(0); displayFont();restoreFont();

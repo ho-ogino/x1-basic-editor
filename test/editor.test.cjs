@@ -558,10 +558,10 @@ const hoverFixture=Buffer.concat([
   Buffer.from('200 B$="'),Buffer.from([128,129,130,31,29,29,29,131,132,133]),Buffer.from('":C$="'),
   Buffer.from([128]),Buffer.from('":REM "fake quoted PCG"\n210 PRINT "unterminated')
 ]);
-async function hoverSetup(){
-  const events=[],ui=setup(hoverFixture,{styles:true,desktop:{contentChanged:p=>events.push(p)}});
-  ui.editor.select();await ui.command('pcg-setup');await settle();
-  const ctx={fillRect(){},fillText(){}};ui.$('pcg-string-image').getContext=()=>ctx;
+async function hoverSetup(bytes=hoverFixture,register=true){
+  const events=[],ui=setup(bytes,{styles:true,desktop:{contentChanged:p=>events.push(p)}});
+  if(register){ui.editor.select();await ui.command('pcg-setup');}await settle();
+  const drawn=[],ctx={fillRect(){},fillText(text){drawn.push({text,color:this.fillStyle});}};ui.$('pcg-string-image').getContext=()=>ctx;
   const lines=[...ui.$('mirror').querySelectorAll('.source-line')],literals=[...ui.$('mirror').querySelectorAll('.pcg-literal')];
   const rect=(left,top,right,bottom)=>({left,top,right,bottom,width:right-left,height:bottom-top});
   lines.forEach((line,index)=>{line.getBoundingClientRect=()=>rect(0,index*20,500,index*20+20);});
@@ -578,7 +578,7 @@ async function hoverSetup(){
   ui.w.clearTimeout=id=>{if(timer?.id===id)timer=null;else nativeClear(id);};
   ui.hover=(x=20,vertical=y+5)=>ui.editor.dispatchEvent(new ui.w.MouseEvent('mousemove',{clientX:x,clientY:vertical}));
   ui.tick=async(ms=600)=>{time+=ms;if(timer&&timer.due<=time){const fn=timer.fn;timer=null;fn();}await settle();};
-  return Object.assign(ui,{events,literals,y});
+  return Object.assign(ui,{events,literals,y,drawn});
 }
 test('renderer hover uses exact inner byte ranges for each wrapped literal and leaves bytes, selection and notifications intact',async()=>{
   const ui=await hoverSetup();try{
@@ -598,13 +598,24 @@ test('renderer cancels pending or shown hover on scope, PCG, layout, render and 
   const ui=await hoverSetup();try{
     ui.hover();await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,false);
     ui.$('pcg-strings-only').checked=false;ui.$('pcg-strings-only').dispatchEvent(new ui.w.Event('change'));
-    assert.equal(ui.$('pcg-string-preview').hidden,true);ui.hover();await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,true);
+    assert.equal(ui.$('pcg-string-preview').hidden,true);ui.hover();await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,false);
     ui.$('pcg-strings-only').checked=true;ui.$('pcg-strings-only').dispatchEvent(new ui.w.Event('change'));
     ui.hover();ui.$('pcg-order').value='RGB';ui.$('pcg-order').dispatchEvent(new ui.w.Event('change'));await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,true);
     await settle();ui.hover();await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,false);
     ui.$('sidebar-toggle').click();assert.equal(ui.$('pcg-string-preview').hidden,true);
     ui.hover();ui.$('pcg-enabled').checked=false;ui.$('pcg-enabled').dispatchEvent(new ui.w.Event('change'));await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,true);
+    ui.hover();await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,false);
     ui.$('pcg-enabled').checked=true;ui.$('pcg-enabled').dispatchEvent(new ui.w.Event('change'));await settle();
     ui.hover();await ui.command('new');await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,true);assert.equal(ui.editor.value,'');
+  }finally{ui.dom.window.close();}
+});
+test('renderer previews ordinary-only strings without PCG registration or PCG ON',async()=>{
+  const bytes=Buffer.concat([Buffer.from('200 B$="ABC'),Buffer.from([31,29,29,29]),Buffer.from('DEF":C$="Z"\r\n')]);
+  const ui=await hoverSetup(bytes,false);try{
+    assert.equal(ui.$('pcg-enabled').checked,false);assert.equal(ui.$('pcg-count').textContent,'0 / 256 文字を定義');
+    ui.hover();await ui.tick();assert.equal(ui.$('pcg-string-preview').hidden,false);
+    assert.equal(ui.$('pcg-string-image').width,24);assert.equal(ui.$('pcg-string-image').height,16);
+    assert.deepEqual(ui.drawn.map(item=>item.text),['A','B','C','D','E','F']);assert.ok(ui.drawn.every(item=>item.color==='#FFFFFF'));
+    assert.deepEqual(await ui.save(),bytes);
   }finally{ui.dom.window.close();}
 });
