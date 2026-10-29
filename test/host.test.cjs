@@ -14,10 +14,18 @@ test('host selection supports Electron and injected browser hosts with custom pr
       assert.ok([...w.document.querySelectorAll('[data-command="open"]')].every(button=>button.textContent===(injected?'インポート…':'開く…')));
       assert.equal(w.document.querySelector('[data-command="save"]').textContent,injected?'エクスポート':'保存');
       assert.match(w.document.getElementById('empty-file-hint').textContent,injected?/インポート/:/開いて/);
+      assert.equal(w.document.getElementById('document-bar').hidden,injected);
     }finally{dom.window.close();}
   }
-  const dom=new JSDOM('',{runScripts:'outside-only'});
-  try{assert.throws(()=>dom.window.eval(source),/requires a host/);}finally{dom.window.close();}
+  const dom=new JSDOM(html,{runScripts:'outside-only'});
+  try{
+    for(const [,script] of html.matchAll(/<script src="([^"]+)"/g)){
+      const code=fs.readFileSync(path.join(__dirname,'../src',script),'utf8');
+      if(script==='host.js')assert.throws(()=>dom.window.eval(code),/requires a host/);else dom.window.eval(code);
+    }
+    assert.equal(dom.window.document.getElementById('document-bar').hidden,true);
+    assert.equal(dom.window.document.getElementById('filename').textContent,'');assert.equal(dom.window.document.getElementById('dirty-state').textContent,'');
+  }finally{dom.window.close();}
 });
 test('packaged Electron files contain all HTML scripts and shared font runtime dependencies',()=>{
   const root=path.join(__dirname,'..'),config=require('../package.json');
