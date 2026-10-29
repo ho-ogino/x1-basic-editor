@@ -114,7 +114,9 @@ test('PCG rejects entire malformed spaced runs instead of padding, truncating or
     const scan=pcg.scan(`10 DEFCHR$(65)=HEXCHR$("${source}")`);
     assert.deepEqual(scan.definitions,[]);assert.deepEqual(scan.raw,[]);assert.equal(scan.warnings.length,1);
   }
-  assert.deepEqual(pcg.scan(`10 ${spacedRows[0]}`).raw,[]); // Bare numbered input needs DATA.
+  assert.deepEqual(pcg.scan(`10 ${spacedRows[0]}`).raw,[]); // Including these two digits makes 50, not 48.
+  // Without DATA a numeric first group is data, just as in a bare numeric PCG row.
+  assert.deepEqual(pcg.scan('10 '+'F'.repeat(23)+' '+'F'.repeat(23)).raw.map(d=>d.hex),['10'+'F'.repeat(46)]);
   assert.equal(pcg.scan('F'.repeat(120000)).raw.length,0);
 });
 
