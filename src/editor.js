@@ -117,7 +117,7 @@
   }
   async function setupPcg(){
     const [start,end]=selection();if(start===end){notify('PCG定義や48桁の16進データを選択してください。',true);return;}
-    const scan=X1Pcg.scan(doc.view.text.slice(start,end));
+    const scan=X1Pcg.scan(doc.view.text.slice(start,end).replaceAll(X1.glyph(9),'\t'));
     if(!scan.definitions.length&&!scan.raw.length){notify('取り込めるPCG定義が見つかりません。\n'+scan.warnings.join('\n'),true);return;}
     if(scan.raw.length){
       pcgImport={scan,bytes:doc.bytes};$('pcg-import-summary').textContent='コード指定の定義 '+scan.definitions.length+'件、開始コードを指定するデータ '+scan.raw.length+'件を検出しました。'+(scan.warnings.length?' '+scan.warnings.length+'件は読み飛ばします。':'');
