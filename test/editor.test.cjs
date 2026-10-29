@@ -498,7 +498,7 @@ test('throwing and rejecting content callbacks cannot prevent rendering, subsequ
   }
 });
 
-test('import/export presentation hides New and Save As only for preconfigured hosts',async()=>{
+test('file action labels follow host mode while retaining commands and embedded button visibility',async()=>{
   for(const hostOnly of [false,true]){
     const calls=[],original=Buffer.from([65,13,10,0x87]);
     const ui=setup(original,{hostOnly,styles:true,desktop:{
@@ -511,9 +511,18 @@ test('import/export presentation hides New and Save As only for preconfigured ho
         assert.equal(button(name).hidden,hostOnly);
         assert.equal(ui.w.getComputedStyle(button(name)).display==='none',hostOnly);
       }
-      assert.equal(button('open').textContent,'インポート…');assert.equal(button('save').textContent,'エクスポート');
+      const openLabel=hostOnly?'インポート…':'開く…',saveLabel=hostOnly?'エクスポート':'保存';
+      assert.equal(ui.$('document-bar').hidden,hostOnly);assert.equal(ui.w.getComputedStyle(ui.$('document-bar')).display==='none',hostOnly);
+      assert.equal(ui.$('filename').textContent,hostOnly?'':'test.bas');assert.equal(ui.$('dirty-state').textContent,hostOnly?'':'保存済み');
+      assert.ok([...ui.w.document.querySelectorAll('[data-command="open"]')].every(button=>button.textContent===openLabel));assert.equal(button('save').textContent,saveLabel);
+      assert.match(ui.$('empty-file-hint').textContent,hostOnly?/インポート/:/開いて/);
       assert.notEqual(ui.w.getComputedStyle(button('open')).display,'none');assert.notEqual(ui.w.getComputedStyle(ui.$('sidebar-toggle')).display,'none');
       button('save').click();await settle();assert.deepEqual(Array.from(calls[0].bytes),Array.from(original));assert.equal(calls[0].saveAs,false);
+      assert.equal(ui.$('notice').textContent,hostOnly?'エクスポートしました':'保存しました');
+      assert.equal(ui.$('filename').textContent,hostOnly?'':'test.bas','boolean save results retain the desktop name and never add an embedded name');
+      assert.equal(ui.$('dirty-state').textContent,hostOnly?'':'保存済み');
+      const drop=new ui.w.Event('drop',{cancelable:true});ui.editor.dispatchEvent(drop);
+      assert.equal(drop.defaultPrevented,true);assert.equal(ui.$('notice').textContent,'ファイルは「'+openLabel+'」から選択してください。');
       button('open').click();await settle();assert.equal(calls[1],'open');assert.equal(ui.editor.value,'B');
       if(!hostOnly){button('save-as').click();await settle();assert.equal(calls.at(-1).saveAs,true);button('new').click();await settle();assert.equal(ui.editor.value,'');}
       else {await ui.command('save-as');assert.equal(calls.at(-1).saveAs,true);await ui.command('new');assert.equal(ui.editor.value,'');}
