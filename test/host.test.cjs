@@ -1,15 +1,23 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {JSDOM}=require('jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../src/host.js'),'utf8');
 test('host selection supports Electron and injected browser hosts with custom precedence',()=>{
-  for(const window of [{desktop:{}},{X1Host:{}},{desktop:{},X1Host:{}},{desktop:{},X1Host:null}]){
-    const expected=window.X1Host??window.desktop,injected=window.X1Host!=null;
-    const buttons=[{hidden:false},{hidden:false}];
-    const document={querySelectorAll:()=>buttons};
-    vm.runInNewContext(source,{window,document});assert.equal(window.X1Host,expected);
-    assert.ok(buttons.every(button=>button.hidden===injected));
+  const html=fs.readFileSync(path.join(__dirname,'../src/index.html'),'utf8');
+  for(const hosts of [{desktop:{}},{X1Host:{}},{desktop:{},X1Host:{}},{desktop:{},X1Host:null}]){
+    const dom=new JSDOM(html,{runScripts:'outside-only'}),w=dom.window;
+    try{
+      Object.assign(w,hosts);const expected=hosts.X1Host??hosts.desktop,injected=hosts.X1Host!=null;
+      w.eval(source);assert.equal(w.X1Host,expected);
+      const buttons=[...w.document.querySelectorAll('[data-command="new"],[data-command="save-as"]')];
+      assert.ok(buttons.every(button=>button.hidden===injected));
+      assert.ok([...w.document.querySelectorAll('[data-command="open"]')].every(button=>button.textContent===(injected?'インポート…':'開く…')));
+      assert.equal(w.document.querySelector('[data-command="save"]').textContent,injected?'エクスポート':'保存');
+      assert.match(w.document.getElementById('empty-file-hint').textContent,injected?/インポート/:/開いて/);
+    }finally{dom.window.close();}
   }
-  assert.throws(()=>vm.runInNewContext(source,{window:{}}),/requires a host/);
+  const dom=new JSDOM('',{runScripts:'outside-only'});
+  try{assert.throws(()=>dom.window.eval(source),/requires a host/);}finally{dom.window.close();}
 });
 test('packaged Electron files contain all HTML scripts and shared font runtime dependencies',()=>{
   const root=path.join(__dirname,'..'),config=require('../package.json');

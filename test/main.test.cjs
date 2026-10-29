@@ -55,17 +55,17 @@ test('new document and Save As supersede a pending startup load',async()=>{
   }
 });
 
-test('native import/export menu keeps existing commands and accelerators',()=>{
+test('native Open/Save menu keeps existing commands and accelerators',()=>{
   const app=setup(),file=app.menu.find(item=>item.label==='ファイル');
-  const imports=file.submenu.find(item=>item.label==='インポート…'),exports=file.submenu.find(item=>item.label==='エクスポート');
+  const imports=file.submenu.find(item=>item.label==='開く…'),exports=file.submenu.find(item=>item.label==='保存');
   assert.equal(imports.accelerator,'CmdOrCtrl+O');assert.equal(exports.accelerator,'CmdOrCtrl+S');
   imports.click();exports.click();assert.deepEqual(app.sent,[['command','open'],['command','save']]);
   assert.ok(file.submenu.some(item=>item.label==='新規'));assert.ok(file.submenu.some(item=>item.label==='名前を付けて保存…'));
 });
-test('dirty confirmation uses export wording and preserves save/discard/cancel responses',async()=>{
+test('dirty confirmation uses Save wording and preserves save/discard/cancel responses',async()=>{
   for(const [response,expected] of ['save','discard','cancel'].entries()){
     const app=setup(response);assert.equal(await app.invoke('confirm-dirty'),expected);
-    assert.equal(app.dialogs[0].message,'変更をエクスポートしますか？');
-    assert.deepEqual(Array.from(app.dialogs[0].buttons),['エクスポート','エクスポートしない','キャンセル']);
+    assert.equal(app.dialogs[0].message,'変更を保存しますか？');
+    assert.deepEqual(Array.from(app.dialogs[0].buttons),['保存','保存しない','キャンセル']);
   }
 });

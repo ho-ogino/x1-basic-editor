@@ -1,6 +1,7 @@
 'use strict';
 (() => {
   const host = window.X1Host;
+  const embeddedHost=document.documentElement.dataset.hostMode==='embedded';
   const $ = id => document.getElementById(id);
   const editor = $('editor'), mirror = $('mirror'), doc = new X1.ByteDocument();
   let selectionBefore = [0,0], pendingInputType = '', busy = false, composing = false, group = 'symbols';
@@ -375,7 +376,7 @@
     const snapshot = doc.bytes.slice();
     const result = await host.save({bytes:Array.from(snapshot),saveAs});
     if (!result) return false;
-    doc.markSaved(snapshot); render(...selection()); notify('エクスポートしました'); return true;
+    doc.markSaved(snapshot); render(...selection()); notify(embeddedHost?'エクスポートしました':'保存しました'); return true;
   }
   async function canLeave() {
     if (!doc.dirty) return true;
@@ -481,7 +482,7 @@
     } catch (err) { notify(err.message,true); }
   });
   // Do not let native text dropping insert unvalidated data or trigger file navigation.
-  editor.addEventListener('drop',event => { event.preventDefault(); notify('ファイルは「インポート…」から選択してください。'); });
+  editor.addEventListener('drop',event => { event.preventDefault(); notify('ファイルは「'+(embeddedHost?'インポート…':'開く…')+'」から選択してください。'); });
   document.addEventListener('dragover',event=>event.preventDefault());
   document.addEventListener('drop',event=>event.preventDefault());
   document.querySelectorAll('[data-command]').forEach(button=>button.addEventListener('click',()=>command(button.dataset.command)));
