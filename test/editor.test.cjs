@@ -265,6 +265,42 @@ test('PCG DATA import previews assignment, rejects overflow and supports interle
   }finally{ui.dom.window.close();}
 });
 
+test('spaced PCG DATA selection previews and renders both glyphs without editing desktop or embedded documents',async()=>{
+  const rows=['0000000000010003 0007030707020301 000000000702031D','0100000700000000 2070603000000307 1E0F070007030000'];
+  const hexes=rows.map(row=>row.replaceAll(' ',''));
+  const original=Buffer.from(`10 DATA ${rows[0]}\r\n20 DATA "${rows[1].replaceAll(' ','\t')}"\r30 PRINT "AB"\n`);
+  for(const hostOnly of [false,true]){
+    const changes=[],fonts=[];
+    const ui=setup(original,{hostOnly,desktop:{contentChanged:p=>changes.push(Buffer.from(p.bytes))}});
+    const font=ui.w.X1Host.pcgFont;
+    ui.w.X1Host.pcgFont=p=>{fonts.push(p);return font(p);};
+    try{
+      const end=ui.editor.value.indexOf('30 PRINT');ui.editor.focus();ui.editor.setSelectionRange(0,end);
+      const text=ui.editor.value,notifications=changes.length;
+      await ui.command('pcg-setup');
+      assert.equal(ui.$('pcg-import-dialog').open,true);assert.equal(ui.$('pcg-import-preview').querySelectorAll('figure').length,2);
+      assert.equal(ui.$('pcg-import-order').value,'BRG');assert.equal(ui.$('pcg-import-layout').value,'planar');
+      const previews=[...ui.$('pcg-import-preview').querySelectorAll('img')].map(img=>img.src);
+      assert.notEqual(previews[0],previews[1]);
+      ui.$('pcg-import-dialog').close();await settle(); // Cancel does not install a font or change source.
+      assert.equal(ui.faces.size,0);assert.equal(ui.$('pcg-count').textContent,'0 / 256 文字を定義');
+      await ui.command('pcg-setup');ui.$('pcg-import-confirm').click();await settle();
+      assert.equal(ui.$('pcg-count').textContent,'2 / 256 文字を定義');assert.equal(ui.$('pcg-enabled').checked,true);
+      assert.deepEqual(Array.from(fonts.at(-1).entries,entry=>[entry.code,entry.hex]),[[65,hexes[0]],[66,hexes[1]]]);
+      assert.equal(fonts.at(-1).order,'BRG');assert.equal(fonts.at(-1).layout,'planar');assert.equal(ui.faces.size,1);
+      assert.equal(ui.$('pcg-hex').value,hexes[0]);
+      assert.equal(ui.$('pcg-grid').querySelector('[data-pcg-code="65"] img').src,previews[0]);
+      assert.equal(ui.$('pcg-grid').querySelector('[data-pcg-code="66"] img').src,previews[1]);
+      assert.ok([...ui.$('mirror').querySelectorAll('.pcg-string')].some(span=>span.textContent==='AB'));
+      assert.match(ui.w.document.documentElement.style.getPropertyValue('--x1-font'),/^X1Custom/);
+      assert.equal(ui.editor.value,text);assert.equal(ui.editor.selectionStart,0);assert.equal(ui.editor.selectionEnd,end);
+      assert.equal(ui.dirty,false);assert.equal(changes.length,notifications);
+      ui.editor.focus();await ui.command('undo');assert.equal(ui.editor.value,text);assert.equal(ui.dirty,false);assert.equal(changes.length,notifications);
+      assert.deepEqual(await ui.save(),original);assert.equal(changes.length,notifications);
+    }finally{ui.dom.window.close();}
+  }
+});
+
 test('PCG cancel leaves state untouched; format choices and definitions survive a new document',async()=>{
   const calls=[],ui=setup(Buffer.from(`10 DATA "${pcgHex}"`),{desktop:{async pcgFont(p){calls.push(p);return [0];}}});
   try{
